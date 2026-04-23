@@ -33,6 +33,13 @@ router.delete('/:id/buyers/:buyerId', ctrl.removeBuyer);
 // Historial
 router.get('/:id/history', ctrl.getPhaseHistory);
 
+// Firmas
+router.get('/:id/signatures', ctrl.getSignatures);
+router.post('/:id/signatures', ctrl.createSignature);
+router.put('/:id/signatures/:signatureId', ctrl.updateSignature);
+router.patch('/:id/signatures/:signatureId/status', ctrl.updateSignatureStatus);
+router.delete('/:id/signatures/:signatureId', ctrl.deleteSignature);
+
 // Expedientes vinculados
 router.get('/:id/linked', ctrl.getLinkedExpedients);
 router.post('/:id/link', ctrl.linkExpedient);

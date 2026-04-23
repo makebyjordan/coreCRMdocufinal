@@ -47,25 +47,47 @@ async function getById(req, res) {
 }
 
 function normalizeClientData(body) {
-  const { privacyAccepted, ...rest } = body;
-  if (privacyAccepted !== undefined) {
-    rest.privacyPolicy = privacyAccepted;
-    if (privacyAccepted) rest.privacyDate = new Date();
-  }
-  return rest;
+  const {
+    type, firstName, lastName, dni, companyName, nif, contactPerson,
+    email, phone, phone2, address, city, postalCode, province,
+    privacyPolicy, privacyDate, notes
+  } = body;
+
+  const data = {
+    type, firstName, lastName, dni, companyName, nif, contactPerson,
+    email, phone, phone2, address, city, postalCode, province,
+    privacyPolicy: Boolean(privacyPolicy),
+    privacyDate: privacyDate ? (privacyDate === '' ? null : new Date(privacyDate)) : null,
+    notes
+  };
+
+  // Remove undefined keys to avoid overwriting with undefined
+  Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
+
+  return data;
 }
 
 async function create(req, res) {
-  const client = await prisma.client.create({ data: normalizeClientData(req.body) });
-  res.status(201).json(client);
+  try {
+    const client = await prisma.client.create({ data: normalizeClientData(req.body) });
+    res.status(201).json(client);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
 }
 
 async function update(req, res) {
-  const client = await prisma.client.update({
-    where: { id: req.params.id },
-    data: normalizeClientData(req.body),
-  });
-  res.json(client);
+  try {
+    const client = await prisma.client.update({
+      where: { id: req.params.id },
+      data: normalizeClientData(req.body),
+    });
+    res.json(client);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
 }
 
 async function remove(req, res) {

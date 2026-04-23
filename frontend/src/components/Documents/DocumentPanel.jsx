@@ -473,7 +473,7 @@ export default function DocumentPanel({ expedientId, currentPhase, operationType
                   const Icon = cfg.icon
 
                   return (
-                    <div key={doc.id} className="px-5 py-3 hover:bg-[var(--bg-color)]/30 transition-colors">
+                    <div key={doc.id} id={`doc-${doc.id}`} className="px-5 py-3 hover:bg-[var(--bg-color)]/30 transition-colors">
                       {/* Fila principal */}
                       <div className="flex items-center gap-3">
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${cfg.color}`}>

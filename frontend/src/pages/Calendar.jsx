@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, Plus, X, Calendar as CalIcon,
-  Clock, User, FileText, Trash2, Pencil, List,
+  Clock, User, FileText, Trash2, Pencil, List, Users, Phone, Mail, ArrowRight,
+  PenSquare, CalendarDays, CheckCircle2, XCircle, ExternalLink,
 } from 'lucide-react'
 import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
@@ -13,11 +15,11 @@ import api from '../api/client'
 import toast from 'react-hot-toast'
 
 const EVENT_TYPES = [
-  { value: 'VISITA',    label: 'Visita',        color: 'bg-blue-600' },
-  { value: 'REUNION',   label: 'Reunión',        color: 'bg-indigo-600' },
-  { value: 'LLAMADA',   label: 'Llamada',        color: 'bg-yellow-500' },
-  { value: 'FIRMA',     label: 'Firma',          color: 'bg-purple-500' },
-  { value: 'OTRO',      label: 'Otro',           color: 'bg-gray-400' },
+  { value: 'VISITA',    label: 'Visita',        color: 'bg-teal-600', icon: Users, textColor: 'text-teal-600' },
+  { value: 'REUNION',   label: 'Reunión',       color: 'bg-indigo-600', icon: CalendarDays, textColor: 'text-indigo-600' },
+  { value: 'LLAMADA',   label: 'Llamada',       color: 'bg-yellow-500', icon: Phone, textColor: 'text-yellow-500' },
+  { value: 'FIRMA',     label: 'Firma',         color: 'bg-purple-500', icon: PenSquare, textColor: 'text-purple-500' },
+  { value: 'OTRO',      label: 'Otro',          color: 'bg-gray-400', icon: CalIcon, textColor: 'text-gray-400' },
 ]
 
 function typeColor(type) {
@@ -25,6 +27,27 @@ function typeColor(type) {
 }
 function typeLabel(type) {
   return EVENT_TYPES.find(t => t.value === type)?.label ?? type
+}
+function typeIcon(type) {
+  return EVENT_TYPES.find(t => t.value === type)?.icon ?? CalIcon
+}
+function typeTextColor(type) {
+  return EVENT_TYPES.find(t => t.value === type)?.textColor ?? 'text-gray-400'
+}
+
+// Get signature status color
+function getSignatureStatusColor(status, completed) {
+  if (completed || status === 'FIRMADO') return 'text-green-600 bg-green-500/20'
+  if (status === 'EXPIRADO') return 'text-red-600 bg-red-500/20'
+  if (status === 'ENVIADO') return 'text-purple-600 bg-purple-500/20'
+  return 'text-gray-600 bg-gray-500/20'
+}
+
+const SIGNATURE_STATUS_LABELS = {
+  PENDIENTE: 'Pendiente',
+  ENVIADO: 'Enviado',
+  FIRMADO: 'Firmado',
+  EXPIRADO: 'Expirado',
 }
 
 function toLocalDatetimeValue(iso) {
@@ -197,6 +220,357 @@ function EventModal({ event, defaultDate, onClose, onSaved }) {
   )
 }
 
+// ─── Modal de detalles de visita ──────────────────────────────────────────────
+function VisitModal({ event, onClose }) {
+  const navigate = useNavigate()
+  const visit = event.visit
+  const expedient = event.expedient
+  const client = event.client
+
+  const interestColors = {
+    HIGH: 'text-green-400 bg-green-500/10',
+    MID: 'text-yellow-400 bg-yellow-500/10',
+    LOW: 'text-red-400 bg-red-500/10',
+  }
+
+  const interestLabels = {
+    HIGH: 'Alta',
+    MID: 'Media',
+    LOW: 'Baja',
+  }
+
+  if (!visit) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="bg-[var(--card-bg)] rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b">
+          <div className="flex items-center gap-2">
+            <Users size={20} className="text-teal-600" />
+            <h2 className="text-lg font-semibold">Detalles de Visita</h2>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-[var(--text-muted)]"><X size={20} /></button>
+        </div>
+        <div className="px-6 py-4 space-y-4">
+          {/* Interesado */}
+          <div className="p-4 rounded-lg bg-[var(--sidebar-bg)]">
+            <h3 className="text-sm font-semibold text-[var(--text-main)] mb-2">{visit.visitorName}</h3>
+            {visit.visitorPhone && (
+              <div className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
+                <Phone size={14} />
+                {visit.visitorPhone}
+              </div>
+            )}
+            {client?.email && (
+              <div className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
+                <Mail size={14} />
+                {client.email}
+              </div>
+            )}
+          </div>
+
+          {/* Nivel de interés */}
+          <div>
+            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${interestColors[visit.interestLevel] || interestColors.MID}`}>
+              Interés: {interestLabels[visit.interestLevel] || visit.interestLevel}
+            </span>
+          </div>
+
+          {/* Feedback */}
+          {visit.feedback && (
+            <div>
+              <p className="text-sm font-medium text-[var(--text-muted)] mb-1">Feedback</p>
+              <p className="text-sm text-[var(--text-main)]">{visit.feedback}</p>
+            </div>
+          )}
+
+          {/* Fecha y hora */}
+          <div className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
+            <Clock size={14} />
+            {new Date(visit.date).toLocaleString('es-ES', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            })}
+          </div>
+
+          {/* Expediente */}
+          {expedient && (
+            <div className="p-3 rounded-lg border border-[var(--border-color)]">
+              <div className="flex items-center gap-2 text-sm">
+                <FileText size={14} className="text-[var(--text-muted)]" />
+                <span className="font-mono font-semibold">{expedient.code}</span>
+              </div>
+              {expedient.propertyAddress && (
+                <p className="text-xs text-[var(--text-muted)] mt-1">{expedient.propertyAddress}</p>
+              )}
+            </div>
+          )}
+
+          {/* Botones de acción */}
+          <div className="flex gap-3 pt-2">
+            {expedient && (
+              <button
+                onClick={() => {
+                  navigate(`/expedientes/${expedient.id}?tab=visits`)
+                  onClose()
+                }}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                Ver expediente <ArrowRight size={14} />
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="flex-1 px-4 py-2 text-sm text-[var(--text-muted)] border rounded-lg hover:bg-[var(--bg-color)]">
+              Cerrar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Modal unificado de detalle de evento ─────────────────────────────────────
+function CalendarEventDetailModal({ event, onClose, onComplete }) {
+  const navigate = useNavigate()
+  const type = event.type
+  const Icon = typeIcon(type)
+  
+  const isVisit = type === 'VISITA'
+  const isSignature = type === 'FIRMA'
+  const isCall = type === 'LLAMADA'
+  const isMeeting = type === 'REUNION'
+  
+  const visit = event.visit
+  const signature = event.signature
+  const expedient = event.expedient
+  const client = event.client
+  
+  const statusBadge = () => {
+    if (isSignature && signature) {
+      const colorClass = getSignatureStatusColor(signature.status, event.completed)
+      return (
+        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${colorClass}`}>
+          {SIGNATURE_STATUS_LABELS[signature.status] || signature.status}
+        </span>
+      )
+    }
+    if (event.completed) {
+      return (
+        <span className="text-xs font-semibold px-2.5 py-1 rounded-full text-green-600 bg-green-500/20">
+          Completado
+        </span>
+      )
+    }
+    return null
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="bg-[var(--card-bg)] rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b">
+          <div className="flex items-center gap-2">
+            <Icon size={20} className={typeTextColor(type)} />
+            <h2 className="text-lg font-semibold">{typeLabel(type)}</h2>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-[var(--text-muted)]"><X size={20} /></button>
+        </div>
+        
+        <div className="px-6 py-4 space-y-4">
+          {/* Título y estado */}
+          <div className="flex items-start justify-between gap-3">
+            <h3 className="text-lg font-semibold text-[var(--text-main)]">{event.title}</h3>
+            {statusBadge()}
+          </div>
+          
+          {/* VISITA - Contenido específico */}
+          {isVisit && visit && (
+            <div className="space-y-3">
+              <div className="p-4 rounded-lg bg-[var(--sidebar-bg)]">
+                <h4 className="text-sm font-semibold text-[var(--text-main)] mb-2">{visit.visitorName}</h4>
+                {visit.visitorPhone && (
+                  <div className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
+                    <Phone size={14} />
+                    <a href={`tel:${visit.visitorPhone}`} className="hover:text-blue-600">{visit.visitorPhone}</a>
+                  </div>
+                )}
+                {client?.email && (
+                  <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] mt-1">
+                    <Mail size={14} />
+                    <a href={`mailto:${client.email}`} className="hover:text-blue-600">{client.email}</a>
+                  </div>
+                )}
+              </div>
+              
+              {visit.interestLevel && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-[var(--text-muted)]">Nivel de interés:</span>
+                  <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                    visit.interestLevel === 'HIGH' ? 'text-green-600 bg-green-500/20' :
+                    visit.interestLevel === 'MID' ? 'text-yellow-600 bg-yellow-500/20' :
+                    'text-red-600 bg-red-500/20'
+                  }`}>
+                    {visit.interestLevel === 'HIGH' ? 'Alto' : visit.interestLevel === 'MID' ? 'Medio' : 'Bajo'}
+                  </span>
+                </div>
+              )}
+              
+              {visit.feedback && (
+                <div className="p-3 rounded-lg border border-[var(--border-color)]">
+                  <p className="text-sm font-medium text-[var(--text-muted)] mb-1">Feedback</p>
+                  <p className="text-sm text-[var(--text-main)] italic">"{visit.feedback}"</p>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {/* FIRMA - Contenido específico */}
+          {isSignature && signature && (
+            <div className="space-y-3">
+              <div className="p-4 rounded-lg bg-[var(--sidebar-bg)]">
+                <h4 className="text-sm font-semibold text-[var(--text-main)] mb-2">{signature.signerName}</h4>
+                <div className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
+                  <Mail size={14} />
+                  <span>{signature.signerEmail}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] mt-1">
+                  <User size={14} />
+                  <span>Rol: {signature.signerRole || 'No especificado'}</span>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-lg border border-[var(--border-color)]">
+                  <p className="text-xs text-[var(--text-muted)] mb-1">Documento</p>
+                  <p className="text-sm font-medium text-[var(--text-main)]">{signature.documentName}</p>
+                </div>
+                <div className="p-3 rounded-lg border border-[var(--border-color)]">
+                  <p className="text-xs text-[var(--text-muted)] mb-1">Estado</p>
+                  <p className="text-sm font-medium">{SIGNATURE_STATUS_LABELS[signature.status] || signature.status}</p>
+                </div>
+              </div>
+              
+              {signature.expiresAt && (
+                <div className="p-3 rounded-lg border border-[var(--border-color)]">
+                  <p className="text-xs text-[var(--text-muted)] mb-1">Expira el</p>
+                  <p className="text-sm text-[var(--text-main)]">{new Date(signature.expiresAt).toLocaleString('es-ES')}</p>
+                </div>
+              )}
+              
+              {signature.signUrl && (
+                <a 
+                  href={signature.signUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 w-full px-4 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                >
+                  <ExternalLink size={14} />
+                  Abrir en Signaturit
+                </a>
+              )}
+            </div>
+          )}
+          
+          {/* LLAMADA/REUNION - Contenido específico */}
+          {(isCall || isMeeting) && (
+            <div className="space-y-3">
+              {client && (
+                <div className="p-4 rounded-lg bg-[var(--sidebar-bg)]">
+                  <h4 className="text-sm font-semibold text-[var(--text-main)] mb-2">{client.firstName} {client.lastName}</h4>
+                  {client.phone && (
+                    <div className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
+                      <Phone size={14} />
+                      <a href={`tel:${client.phone}`} className="hover:text-blue-600">{client.phone}</a>
+                    </div>
+                  )}
+                  {client.email && (
+                    <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] mt-1">
+                      <Mail size={14} />
+                      <a href={`mailto:${client.email}`} className="hover:text-blue-600">{client.email}</a>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {event.notes && (
+                <div className="p-3 rounded-lg border border-[var(--border-color)]">
+                  <p className="text-sm font-medium text-[var(--text-muted)] mb-1">
+                    {isCall ? 'Notas de la llamada' : 'Notas de la reunión'}
+                  </p>
+                  <p className="text-sm text-[var(--text-main)]">{event.notes}</p>
+                </div>
+              )}
+              
+              {isCall && !event.completed && (
+                <button 
+                  onClick={() => onComplete && onComplete(event)}
+                  className="flex items-center justify-center gap-2 w-full px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700"
+                >
+                  <CheckCircle2 size={14} />
+                  Marcar como realizada
+                </button>
+              )}
+            </div>
+          )}
+          
+          {/* Fecha y hora */}
+          <div className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
+            <Clock size={14} />
+            {new Date(event.startAt).toLocaleString('es-ES', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            })}
+          </div>
+          
+          {/* Expediente */}
+          {expedient && (
+            <div className="p-3 rounded-lg border border-[var(--border-color)]">
+              <div className="flex items-center gap-2 text-sm">
+                <FileText size={14} className="text-[var(--text-muted)]" />
+                <span className="font-mono font-semibold">{expedient.code}</span>
+              </div>
+              {expedient.propertyAddress && (
+                <p className="text-xs text-[var(--text-muted)] mt-1">{expedient.propertyAddress}</p>
+              )}
+            </div>
+          )}
+          
+          {/* Botones de acción */}
+          <div className="flex gap-3 pt-2">
+            {expedient && (
+              <button
+                onClick={() => {
+                  navigate(`/expedientes/${expedient.id}`)
+                  onClose()
+                }}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Ver expediente <ArrowRight size={14} />
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="flex-1 px-4 py-2 text-sm text-[var(--text-muted)] border rounded-lg hover:bg-[var(--bg-color)]"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Página principal ─────────────────────────────────────────────────────────
 export default function CalendarPage() {
   const [current, setCurrent] = useState(new Date())
@@ -205,33 +579,55 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(null)
   const [selected, setSelected] = useState(null)
+  const [detailModal, setDetailModal] = useState(null) // For unified event detail modal
   const [view, setView] = useState('calendar') // 'calendar' | 'list'
+  
+  // Filters - all enabled by default
+  const [activeFilters, setActiveFilters] = useState(() => {
+    const saved = localStorage.getItem('calendar-filters')
+    return saved ? JSON.parse(saved) : ['VISITA', 'FIRMA', 'LLAMADA', 'REUNION', 'OTRO']
+  })
 
   const fetchEvents = useCallback(async (month) => {
     setLoading(true)
     try {
       const from = format(startOfMonth(month), "yyyy-MM-dd'T'00:00:00")
       const to = format(endOfMonth(month), "yyyy-MM-dd'T'23:59:59")
-      const { data } = await api.get(`/calendar?from=${from}&to=${to}`)
+      const types = activeFilters.join(',')
+      const { data } = await api.get(`/calendar?from=${from}&to=${to}&types=${types}`)
       setEvents(data)
     } catch {
       toast.error('Error cargando eventos')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [activeFilters])
 
   const fetchAllEvents = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await api.get('/calendar')
+      const types = activeFilters.join(',')
+      const { data } = await api.get(`/calendar?types=${types}`)
       setAllEvents(data.sort((a, b) => compareAsc(parseISO(a.startAt), parseISO(b.startAt))))
     } catch {
       toast.error('Error cargando eventos')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [activeFilters])
+
+  // Save filters to localStorage when changed
+  useEffect(() => {
+    localStorage.setItem('calendar-filters', JSON.stringify(activeFilters))
+  }, [activeFilters])
+  
+  const toggleFilter = (type) => {
+    setActiveFilters(prev => 
+      prev.includes(type) 
+        ? prev.filter(t => t !== type)
+        : [...prev, type]
+    )
+  }
 
   useEffect(() => {
     if (view === 'calendar') fetchEvents(current)
@@ -256,6 +652,23 @@ export default function CalendarPage() {
       setAllEvents(prev => prev.filter(e => e.id !== id))
       toast.success('Evento eliminado')
     } catch {}
+  }
+
+  async function handleComplete(event) {
+    try {
+      await api.put(`/calendar/${event.id}`, { completed: true })
+      setEvents(prev => prev.map(e => e.id === event.id ? { ...e, completed: true } : e))
+      setAllEvents(prev => prev.map(e => e.id === event.id ? { ...e, completed: true } : e))
+      toast.success('Evento marcado como completado')
+      setDetailModal(null)
+    } catch {
+      toast.error('Error al completar evento')
+    }
+  }
+
+  // Handle event click - open detail modal
+  const handleEventClick = (event) => {
+    setDetailModal(event)
   }
 
   // ─── Construir grid del mes ───────────────────────────────────────────────
@@ -319,21 +732,46 @@ export default function CalendarPage() {
             </div>
           )}
         </div>
-        <button
-          onClick={() => setModal({ mode: 'create' })}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700">
-          <Plus size={16} /> Añadir evento
-        </button>
+        
+        {/* Filtros por tipo */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-[var(--text-muted)] mr-1">Mostrar:</span>
+          {EVENT_TYPES.map(({ value, label, color, icon: Icon }) => (
+            <button
+              key={value}
+              onClick={() => toggleFilter(value)}
+              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all ${
+                activeFilters.includes(value)
+                  ? `${color} text-white`
+                  : 'bg-[var(--sidebar-bg)] text-gray-400 hover:text-[var(--text-muted)]'
+              }`}
+              title={label}
+            >
+              <Icon size={12} />
+              <span className="hidden sm:inline">{label}</span>
+            </button>
+          ))}
+          <div className="w-px h-6 bg-[var(--border-color)] mx-2" />
+          <button
+            onClick={() => setModal({ mode: 'create' })}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700">
+            <Plus size={16} /> Añadir
+          </button>
+        </div>
       </div>
-
       {/* ─── Vista Lista ────────────────────────────────────────────────────── */}
-      {view === 'list' && <ListView events={allEvents} loading={loading}
-        onEdit={ev => setModal({ mode: 'edit', event: ev })}
-        onDelete={handleDelete} />}
-
+      {view === 'list' && (
+        <ListView 
+          events={allEvents} 
+          loading={loading}
+          onEdit={ev => setModal({ mode: 'edit', event: ev })}
+          onDelete={handleDelete}
+          onEventClick={handleEventClick}
+        />
+      )}
       {/* ─── Vista Calendario ───────────────────────────────────────────────── */}
-      {view === 'calendar' && <div className="flex flex-1 overflow-hidden">
-        {/* ─── Calendario ───────────────────────────────────────────────────── */}
+      {view === 'calendar' && (
+        <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 overflow-auto p-4">
           {/* Cabecera días semana */}
           <div className="grid grid-cols-7 mb-1">
@@ -390,16 +828,20 @@ export default function CalendarPage() {
                 </p>
                 <button onClick={() => setModal({ mode: 'create', date: format(selected, 'yyyy-MM-dd') })}
                   className="text-blue-600 hover:text-blue-800">
-                  <Plus size={18} />
+                    <Plus size={18} />
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
                 {selectedDayEvents.length === 0 ? (
                   <p className="text-sm text-[var(--text-muted)] text-center mt-8">Sin eventos este día</p>
                 ) : selectedDayEvents.map(ev => (
-                  <EventCard key={ev.id} ev={ev}
+                  <EventCard
+                    key={ev.id}
+                    ev={ev}
                     onEdit={() => setModal({ mode: 'edit', event: ev })}
-                    onDelete={() => handleDelete(ev.id)} />
+                    onDelete={() => handleDelete(ev.id)}
+                    onClick={handleEventClick}
+                  />
                 ))}
               </div>
             </>
@@ -414,17 +856,22 @@ export default function CalendarPage() {
                   <p className="text-sm text-[var(--text-muted)] text-center mt-8">No hay eventos próximos</p>
                 )}
                 {upcomingEvents.map(ev => (
-                  <EventCard key={ev.id} ev={ev}
+                  <EventCard
+                    key={ev.id}
+                    ev={ev}
                     onEdit={() => setModal({ mode: 'edit', event: ev })}
-                    onDelete={() => handleDelete(ev.id)} />
+                    onDelete={() => handleDelete(ev.id)}
+                    onClick={() => handleEventClick(ev)}
+                  />
                 ))}
               </div>
             </>
           )}
         </div>
-      </div>}
-
-      {/* Modal */}
+      </div>
+      )}
+    
+      {/* Event Modal */}
       {modal && (
         <EventModal
           event={modal.mode === 'edit' ? modal.event : null}
@@ -433,25 +880,43 @@ export default function CalendarPage() {
           onSaved={handleSaved}
         />
       )}
+      {/* Unified Event Detail Modal */}
+      {detailModal && (
+        <CalendarEventDetailModal
+          event={detailModal}
+          onClose={() => setDetailModal(null)}
+          onComplete={handleComplete}
+        />
+      )}
     </div>
   )
 }
 
-function EventCard({ ev, onEdit, onDelete }) {
+function EventCard({ ev, onEdit, onDelete, onClick }) {
+  const isSystemEvent = ev.visitId || ev.signatureId // System events (visits, signatures)
+  const Icon = typeIcon(ev.type)
   return (
-    <div className="border rounded-lg p-3 hover:shadow-sm transition-shadow">
+    <div 
+      className="border rounded-lg p-3 hover:shadow-sm transition-shadow cursor-pointer"
+      onClick={onClick}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <span className={`w-2 h-2 rounded-full shrink-0 ${typeColor(ev.type)}`} />
+          <Icon size={14} className={`shrink-0 ${typeTextColor(ev.type)}`} />
           <p className="text-sm font-medium text-[var(--text-main)] truncate">{ev.title}</p>
         </div>
         <div className="flex gap-1 shrink-0">
-          <button onClick={onEdit} className="text-gray-400 hover:text-blue-600 transition-colors">
-            <Pencil size={13} />
-          </button>
-          <button onClick={onDelete} className="text-gray-400 hover:text-red-600 transition-colors">
-            <Trash2 size={13} />
-          </button>
+          {!isSystemEvent && (
+            <button onClick={(e) => { e.stopPropagation(); onEdit(); }} className="text-gray-400 hover:text-blue-600 transition-colors">
+              <Pencil size={13} />
+            </button>
+          )}
+          {!isSystemEvent && (
+            <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="text-gray-400 hover:text-red-600 transition-colors">
+              <Trash2 size={13} />
+            </button>
+          )}
+          {isSystemEvent && <Icon size={14} className={typeTextColor(ev.type)} />}
         </div>
       </div>
       <div className="mt-1.5 space-y-1">
@@ -486,7 +951,7 @@ function EventCard({ ev, onEdit, onDelete }) {
 }
 
 // ─── Vista Lista ──────────────────────────────────────────────────────────────
-function ListView({ events, loading, onEdit, onDelete }) {
+function ListView({ events, loading, onEdit, onDelete, onEventClick }) {
   if (loading) return <div className="flex-1 flex items-center justify-center text-[var(--text-muted)] text-sm">Cargando...</div>
   if (events.length === 0) return (
     <div className="flex-1 flex flex-col items-center justify-center text-[var(--text-muted)] gap-2">
@@ -527,9 +992,15 @@ function ListView({ events, loading, onEdit, onDelete }) {
                 {format(parseISO(key), "EEEE, d 'de' MMMM yyyy", { locale: es })}
               </p>
               <div className="space-y-2 pl-2">
-                {evs.map(ev => (
-                  <div key={ev.id}
-                    className="flex items-start gap-3 p-3 rounded-lg border bg-[var(--card-bg)] hover:shadow-sm transition-shadow">
+                {evs.map(ev => {
+                  const Icon = typeIcon(ev.type)
+                  const isSystemEvent = ev.visitId || ev.signatureId
+                  return (
+                  <div 
+                    key={ev.id}
+                    className="flex items-start gap-3 p-3 rounded-lg border bg-[var(--card-bg)] hover:shadow-sm transition-shadow cursor-pointer"
+                    onClick={() => onEventClick && onEventClick(ev)}
+                  >
                     <div className={`w-1 self-stretch rounded-full shrink-0 ${typeColor(ev.type)}`} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -560,15 +1031,21 @@ function ListView({ events, loading, onEdit, onDelete }) {
                       {ev.notes && <p className="text-xs text-[var(--text-muted)] mt-1">{ev.notes}</p>}
                     </div>
                     <div className="flex gap-1 shrink-0 mt-0.5">
-                      <button onClick={() => onEdit(ev)} className="text-gray-400 hover:text-blue-600 transition-colors p-1">
-                        <Pencil size={14} />
-                      </button>
-                      <button onClick={() => onDelete(ev.id)} className="text-gray-400 hover:text-red-600 transition-colors p-1">
-                        <Trash2 size={14} />
-                      </button>
+                      {!isSystemEvent && (
+                        <button onClick={(e) => { e.stopPropagation(); onEdit(ev); }} className="text-gray-400 hover:text-blue-600 transition-colors p-1">
+                          <Pencil size={14} />
+                        </button>
+                      )}
+                      {!isSystemEvent && (
+                        <button onClick={(e) => { e.stopPropagation(); onDelete(ev.id); }} className="text-gray-400 hover:text-red-600 transition-colors p-1">
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                      {isSystemEvent && <Icon size={14} className={typeTextColor(ev.type)} />}
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           ))}

@@ -1,12 +1,12 @@
-import { useState } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, ArrowRight, CheckCircle, XCircle, AlertTriangle,
   FolderOpen, FileText, Bell, Users, History, RefreshCw,
-  Pencil, Save, X, Plus, Edit2, Trash2,
-  LayoutDashboard, Clock, Link2, Calculator,
+  Pencil, Save, X, Plus, Edit2, Trash2, PenSquare, ExternalLink, Mail,
+  LayoutDashboard, Clock, Link2, Calculator, Calendar as CalIcon,
 } from 'lucide-react'
 import api from '../api/client'
 import ChecklistPanel from '../components/Checklist/ChecklistPanel'
@@ -26,6 +26,7 @@ const TABS = [
   { id: 'checklist', label: 'Checklist', icon: CheckCircle },
   { id: 'overview', label: 'Resumen', icon: FolderOpen },
   { id: 'visits', label: 'Visitas', icon: Users },
+  { id: 'signatures', label: 'Firmas', icon: PenSquare },
   { id: 'documents', label: 'Documentos', icon: FileText },
   { id: 'alerts', label: 'Alertas', icon: AlertTriangle },
   { id: 'timeline', label: 'Timeline', icon: Clock },
@@ -36,6 +37,20 @@ const TABS = [
   { id: 'notifications', label: 'Notificaciones', icon: Bell },
   { id: 'history', label: 'Historial', icon: History },
 ]
+
+const SIGNATURE_STATUS_LABELS = {
+  PENDIENTE: 'Pendiente',
+  ENVIADO: 'Enviado',
+  FIRMADO: 'Firmado',
+  EXPIRADO: 'Expirado',
+}
+
+const SIGNATURE_STATUS_COLORS = {
+  PENDIENTE: 'text-gray-600 bg-gray-500/20',
+  ENVIADO: 'text-purple-600 bg-purple-500/20',
+  FIRMADO: 'text-green-600 bg-green-500/20',
+  EXPIRADO: 'text-red-600 bg-red-500/20',
+}
 
 const PHASE_LABELS = {
   CAPTACION: 'Captación',
@@ -111,11 +126,42 @@ export default function ExpedientDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const [tab, setTab] = useState('dashboard')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [tab, setTab] = useState(searchParams.get('tab') || 'dashboard')
   const [advanceModal, setAdvanceModal] = useState(false)
   const [decision, setDecision] = useState('SI')
   const [notes, setNotes] = useState('')
   const [showParticipantModal, setShowParticipantModal] = useState(false)
+
+  // Handle URL params for tab switching and element highlighting
+  useEffect(() => {
+    const tabParam = searchParams.get('tab')
+    const documentId = searchParams.get('documentId')
+    
+    if (tabParam && tabParam !== tab) {
+      setTab(tabParam)
+    }
+
+    // Scroll to and highlight specific element if documentId is provided
+    if (documentId) {
+      setTimeout(() => {
+        const element = document.getElementById(`doc-${documentId}`)
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          element.classList.add('highlight-flash')
+          setTimeout(() => {
+            element.classList.remove('highlight-flash')
+          }, 2000)
+        }
+      }, 300)
+    }
+  }, [searchParams, tab])
+
+  // Update URL when tab changes
+  const handleTabChange = (newTab) => {
+    setTab(newTab)
+    setSearchParams({ tab: newTab })
+  }
 
   const { data: exp, isLoading } = useQuery({
     queryKey: ['expedient', id],
@@ -285,7 +331,7 @@ export default function ExpedientDetailPage() {
         {TABS.map(({ id: tabId, label, icon: Icon }) => (
           <button
             key={tabId}
-            onClick={() => setTab(tabId)}
+            onClick={() => handleTabChange(tabId)}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
               tab === tabId
                 ? 'border-blue-600 text-blue-600'
@@ -302,6 +348,7 @@ export default function ExpedientDetailPage() {
         {tab === 'dashboard'     && <OperationDashboard exp={exp} />}
         {tab === 'overview'      && <ExpedientOverview exp={exp} renewMutation={renewMutation} />}
         {tab === 'visits'        && <VisitsPanel expedientId={id} />}
+        {tab === 'signatures'    && <SignaturesPanel expedientId={id} />}
         {tab === 'checklist'     && <ChecklistPanel expedientId={id} />}
         {tab === 'documents'     && <DocumentPanel expedientId={id} currentPhase={exp.currentPhase} operationType={exp.operationType} />}
         {tab === 'alerts'        && <AlertsPanel exp={exp} expedientId={id} />}
@@ -1069,6 +1116,7 @@ function PhaseHistoryTab({ history = [], operationType }) {
 
 function VisitsPanel({ expedientId }) {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [showModal, setShowModal] = useState(false)
   const [editingVisit, setEditingVisit] = useState(null)
 
@@ -1131,6 +1179,11 @@ function VisitsPanel({ expedientId }) {
               <div className="flex items-center justify-between mb-1">
                 <h4 className="font-bold text-[var(--text-main)]">{v.visitorName}</h4>
                 <div className="flex items-center gap-2">
+                  {v.calendarEventId && (
+                    <span className="flex items-center gap-1 text-[10px] text-teal-600 bg-teal-500/10 px-2 py-0.5 rounded-full">
+                      <CalIcon size={10} /> En calendario
+                    </span>
+                  )}
                   <span className={`badge text-[10px] ${
                     v.interestLevel === 'HIGH' ? 'bg-green-500/20 text-green-400' :
                     v.interestLevel === 'MID' ? 'bg-blue-500/20 text-blue-400' :
@@ -1143,6 +1196,14 @@ function VisitsPanel({ expedientId }) {
               </div>
               <p className="text-sm text-[var(--text-muted)] italic">"{v.feedback || 'Sin comentarios'}"</p>
               {v.visitorPhone && <p className="text-xs text-gray-400 mt-1">Tel: {v.visitorPhone}</p>}
+              {v.calendarEventId && (
+                <button
+                  onClick={() => navigate('/calendario')}
+                  className="text-xs text-teal-600 hover:text-teal-700 mt-2 flex items-center gap-1"
+                >
+                  <CalIcon size={12} /> Ver en calendario
+                </button>
+              )}
             </div>
             <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2">
               <button onClick={() => { setEditingVisit(v); setShowModal(true) }} className="p-1.5 text-gray-400 hover:text-blue-600"><Edit2 size={14} /></button>
@@ -1301,3 +1362,213 @@ function ParticipantModal({ expedientId, onClose, onSuccess }) {
     </div>
   )
 }
+
+// ─── Signatures Panel ────────────────────────────────────────────────────────
+function SignaturesPanel({ expedientId }) {
+  const qc = useQueryClient()
+  const navigate = useNavigate()
+  const [showModal, setShowModal] = useState(false)
+  const [editingSignature, setEditingSignature] = useState(null)
+
+  const { data: signatures, isLoading } = useQuery({
+    queryKey: ['signatures', expedientId],
+    queryFn: () => api.get(`/expedients/${expedientId}/signatures`).then(r => r.data),
+  })
+
+  const mutation = useMutation({
+    mutationFn: (data) => editingSignature
+      ? api.put(`/expedients/${expedientId}/signatures/${editingSignature.id}`, data)
+      : api.post(`/expedients/${expedientId}/signatures`, data),
+    onSuccess: () => {
+      toast.success(editingSignature ? 'Firma actualizada' : 'Firma programada')
+      qc.invalidateQueries(['signatures', expedientId])
+      setShowModal(false)
+      setEditingSignature(null)
+    },
+    onError: (err) => toast.error(err.response?.data?.error || 'Error'),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => api.delete(`/expedients/${expedientId}/signatures/${id}`),
+    onSuccess: () => {
+      toast.success('Firma eliminada')
+      qc.invalidateQueries(['signatures', expedientId])
+    },
+  })
+
+  const updateStatusMutation = useMutation({
+    mutationFn: ({ id, status }) => api.patch(`/expedients/${expedientId}/signatures/${id}/status`, { status }),
+    onSuccess: () => {
+      toast.success('Estado actualizado')
+      qc.invalidateQueries(['signatures', expedientId])
+    },
+  })
+
+  if (isLoading) return <div className="p-10 text-center text-gray-400">Cargando firmas...</div>
+
+  const signaturesList = signatures || []
+
+  return (
+    <div className="card p-5">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h3 className="font-bold text-lg text-[var(--text-main)]">Firmas y Documentos</h3>
+          <p className="text-sm text-gray-500">Gestión de firmas electrónicas y documentos pendientes</p>
+        </div>
+        <button onClick={() => setShowModal(true)} className="btn-primary">
+          <Plus size={16} /> Añadir firma
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        {signaturesList.length === 0 && (
+          <div className="text-center py-10 border-2 border-dashed border-[var(--border-color)] rounded-xl">
+            <PenSquare className="mx-auto text-gray-300 mb-2" size={32} />
+            <p className="text-gray-400">No hay firmas programadas</p>
+          </div>
+        )}
+        
+        {signaturesList.map(s => (
+          <div key={s.id} className="flex gap-4 p-4 rounded-xl border border-[var(--border-color)] hover:border-purple-100 hover:bg-[var(--sidebar-bg)]/30 transition-all group">
+            <div className="w-12 h-12 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 shrink-0">
+              <PenSquare size={20} />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center justify-between mb-1">
+                <h4 className="font-bold text-[var(--text-main)]">{s.documentName}</h4>
+                <div className="flex items-center gap-2">
+                  {s.calendarEventId && (
+                    <span className="flex items-center gap-1 text-[10px] text-purple-600 bg-purple-500/10 px-2 py-0.5 rounded-full">
+                      <CalIcon size={10} /> En calendario
+                    </span>
+                  )}
+                  <span className={`badge text-[10px] ${SIGNATURE_STATUS_COLORS[s.status] || 'text-gray-600 bg-gray-500/20'}`}>
+                    {SIGNATURE_STATUS_LABELS[s.status] || s.status}
+                  </span>
+                  <span className="text-xs text-gray-400">{new Date(s.createdAt).toLocaleDateString('es-ES')}</span>
+                </div>
+              </div>
+              
+              <div className="text-sm text-[var(--text-muted)]">
+                <p><span className="font-medium">Firmante:</span> {s.signerName} ({s.signerEmail})</p>
+                <p><span className="font-medium">Rol:</span> {s.signerRole || 'No especificado'}</p>
+              </div>
+              
+              {s.expiresAt && (
+                <p className="text-xs text-gray-400 mt-1">
+                  Expira: {new Date(s.expiresAt).toLocaleString('es-ES')}
+                </p>
+              )}
+              
+              {s.signUrl && (
+                <a
+                  href={s.signUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-purple-600 hover:text-purple-700 mt-2 flex items-center gap-1 inline-flex"
+                >
+                  <ExternalLink size={12} /> Abrir link de firma
+                </a>
+              )}
+              
+              {s.calendarEventId && (
+                <button
+                  onClick={() => navigate('/calendario')}
+                  className="text-xs text-purple-600 hover:text-purple-700 mt-2 flex items-center gap-1"
+                >
+                  <CalIcon size={12} /> Ver en calendario
+                </button>
+              )}
+            </div>
+            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center gap-2">
+              <button onClick={() => { setEditingSignature(s); setShowModal(true) }} className="p-1.5 text-gray-400 hover:text-blue-600"><Edit2 size={14} /></button>
+              <button onClick={() => { if (confirm('¿Eliminar firma?')) deleteMutation.mutate(s.id) }} className="p-1.5 text-gray-400 hover:text-red-600"><Trash2 size={14} /></button>
+              {s.status === 'PENDIENTE' && (
+                <button onClick={() => updateStatusMutation.mutate({ id: s.id, status: 'ENVIADO' })} className="p-1.5 text-gray-400 hover:text-purple-600" title="Marcar como enviado">
+                  <Mail size={14} />
+                </button>
+              )}
+              {s.status === 'ENVIADO' && (
+                <button onClick={() => updateStatusMutation.mutate({ id: s.id, status: 'FIRMADO' })} className="p-1.5 text-gray-400 hover:text-green-600" title="Marcar como firmado">
+                  <CheckCircle size={14} />
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {showModal && (
+        <SignatureModal
+          signature={editingSignature}
+          onClose={() => { setShowModal(false); setEditingSignature(null) }}
+          onSubmit={(d) => mutation.mutate(d)}
+          isPending={mutation.isPending}
+        />
+      )}
+    </div>
+  )
+}
+
+function SignatureModal({ signature, onClose, onSubmit, isPending }) {
+  const [form, setForm] = useState({
+    documentName: signature?.documentName || '',
+    signerName: signature?.signerName || '',
+    signerEmail: signature?.signerEmail || '',
+    signerRole: signature?.signerRole || 'COMPRADOR',
+    expiresAt: signature?.expiresAt ? new Date(signature.expiresAt).toISOString().split('T')[0] : '',
+    signUrl: signature?.signUrl || '',
+    status: signature?.status || 'PENDIENTE',
+  })
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+      <div className="card p-6 w-full max-w-md">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-lg">{signature ? 'Editar firma' : 'Añadir firma'}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-[var(--text-muted)]"><X size={20} /></button>
+        </div>
+        <form onSubmit={(e) => { e.preventDefault(); onSubmit(form) }} className="space-y-4">
+          <div>
+            <label className="label">Nombre del documento</label>
+            <input type="text" className="input" placeholder="Ej: Contrato de arras" value={form.documentName} onChange={e => setForm({ ...form, documentName: e.target.value })} required />
+          </div>
+          <div>
+            <label className="label">Nombre del firmante</label>
+            <input type="text" className="input" placeholder="Nombre completo" value={form.signerName} onChange={e => setForm({ ...form, signerName: e.target.value })} required />
+          </div>
+          <div>
+            <label className="label">Email del firmante</label>
+            <input type="email" className="input" placeholder="email@ejemplo.com" value={form.signerEmail} onChange={e => setForm({ ...form, signerEmail: e.target.value })} required />
+          </div>
+          <div>
+            <label className="label">Rol del firmante</label>
+            <select className="select" value={form.signerRole} onChange={e => setForm({ ...form, signerRole: e.target.value })}>
+              <option value="COMPRADOR">Comprador</option>
+              <option value="VENDEDOR">Vendedor</option>
+              <option value="PROPIETARIO">Propietario</option>
+              <option value="INQUILINO">Inquilino</option>
+              <option value="ARRENDADOR">Arrendador</option>
+              <option value="REPRESENTANTE">Representante</option>
+              <option value="OTRO">Otro</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">Fecha de expiración (opcional)</label>
+            <input type="date" className="input" value={form.expiresAt} onChange={e => setForm({ ...form, expiresAt: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">Link de firma Signaturit (opcional)</label>
+            <input type="url" className="input" placeholder="https://..." value={form.signUrl} onChange={e => setForm({ ...form, signUrl: e.target.value })} />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose} className="btn-secondary">Cancelar</button>
+            <button type="submit" disabled={isPending} className="btn-primary">
+              {isPending ? 'Procesando...' : 'Guardar'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )}

@@ -24,6 +24,9 @@ function computeAlerts(exp) {
       title: 'Documento rechazado',
       description: `"${d.name}"${d.rejectedReason ? ` — ${d.rejectedReason}` : ''}`,
       action: 'Resubir documento',
+      type: 'document',
+      expedientId: exp.id,
+      documentId: d.id,
     })
   })
 
@@ -38,6 +41,9 @@ function computeAlerts(exp) {
       title: `${pendingRequired} ítems obligatorios sin completar`,
       description: `Completa el checklist de la fase "${exp.currentPhase}" para poder avanzar`,
       action: 'Ver checklist',
+      type: 'checklist',
+      expedientId: exp.id,
+      phase: exp.currentPhase,
     })
   }
 
@@ -50,6 +56,8 @@ function computeAlerts(exp) {
         title: 'Exclusividad vencida',
         description: `Venció hace ${Math.abs(daysLeft)} días — ${new Date(exp.exclusivityEnd).toLocaleDateString('es-ES')}`,
         action: 'Renovar exclusividad',
+        type: 'expedient',
+        expedientId: exp.id,
       })
     } else if (daysLeft <= 15) {
       critical.push({
@@ -58,6 +66,8 @@ function computeAlerts(exp) {
         title: `Exclusividad vence en ${daysLeft} días`,
         description: `Fecha de vencimiento: ${new Date(exp.exclusivityEnd).toLocaleDateString('es-ES')}`,
         action: 'Renovar exclusividad',
+        type: 'expedient',
+        expedientId: exp.id,
       })
     }
   }
@@ -71,6 +81,8 @@ function computeAlerts(exp) {
         title: 'Arras vencidas',
         description: `El contrato de arras venció hace ${Math.abs(daysLeft)} días`,
         action: 'Revisar contrato',
+        type: 'expedient',
+        expedientId: exp.id,
       })
     } else if (daysLeft <= 7) {
       critical.push({
@@ -79,6 +91,8 @@ function computeAlerts(exp) {
         title: `Arras vencen en ${daysLeft} días`,
         description: `Fecha límite: ${new Date(exp.arrasDeadline).toLocaleDateString('es-ES')}`,
         action: 'Revisar contrato',
+        type: 'expedient',
+        expedientId: exp.id,
       })
     }
   }
@@ -90,6 +104,8 @@ function computeAlerts(exp) {
       title: 'Expediente bloqueado',
       description: 'El expediente está bloqueado. Resuelve los problemas para continuar.',
       action: 'Desbloquear',
+      type: 'expedient',
+      expedientId: exp.id,
     })
   }
 
@@ -106,6 +122,8 @@ function computeAlerts(exp) {
       title: `${visitsSinFeedback.length} visita${visitsSinFeedback.length > 1 ? 's' : ''} sin feedback`,
       description: `Han pasado más de 48h sin registrar feedback de visitantes`,
       action: 'Registrar feedback',
+      type: 'expedient',
+      expedientId: exp.id,
     })
   }
 
@@ -117,6 +135,8 @@ function computeAlerts(exp) {
       title: `${pendingDocs.length} documentos pendientes de revisión`,
       description: 'Hay documentos subidos que aún no han sido validados',
       action: 'Revisar documentos',
+      type: 'documents',
+      expedientId: exp.id,
     })
   }
 
@@ -129,6 +149,8 @@ function computeAlerts(exp) {
         title: `Cita notaría en ${daysToNotary} días`,
         description: `${exp.notaryName || 'Notaría'} — ${new Date(exp.notaryDate).toLocaleDateString('es-ES')}`,
         action: 'Ver detalles',
+        type: 'expedient',
+        expedientId: exp.id,
       })
     }
   }
@@ -146,6 +168,9 @@ function computeAlerts(exp) {
       icon: CheckCircle,
       title: `${recentlyValidated.length} documento${recentlyValidated.length > 1 ? 's' : ''} validado${recentlyValidated.length > 1 ? 's' : ''} hoy`,
       description: recentlyValidated.map(d => d.name).join(', '),
+      type: 'documents',
+      expedientId: exp.id,
+      documentId: recentlyValidated.length === 1 ? recentlyValidated[0].id : null,
     })
   }
 
@@ -156,6 +181,8 @@ function computeAlerts(exp) {
       icon: Info,
       title: `${highInterestVisits.length} interesado${highInterestVisits.length > 1 ? 's' : ''} de alta prioridad`,
       description: highInterestVisits.map(v => v.visitorName).join(', '),
+      type: 'expedient',
+      expedientId: exp.id,
     })
   }
 
@@ -192,6 +219,8 @@ function computeLinkedAlerts(linksData) {
         title: `Avance bloqueado por vínculo`,
         description: `${linked?.code} debe alcanzar la fase ${link.requiredPhase} (ahora: ${linked?.currentPhase}). Tipo: ${link.linkType.replace(/_/g, ' ')}`,
         action: 'Ver expediente vinculado',
+        type: 'expedient',
+        expedientId: linked?.id,
       })
     }
   })
@@ -208,6 +237,8 @@ function computeLinkedAlerts(linksData) {
         icon: ShieldCheck,
         title: `Vínculo desbloqueado`,
         description: `${linked?.code} alcanzó la fase ${linked?.currentPhase} (requerida: ${link.requiredPhase}). Ya puedes avanzar.`,
+        type: 'expedient',
+        expedientId: linked?.id,
       })
     }
   })
@@ -222,6 +253,8 @@ function computeLinkedAlerts(linksData) {
         title: `Expediente vinculado bloqueado`,
         description: `${source?.code} (${link.linkType.replace(/_/g, ' ')}) está bloqueado, lo que puede afectar a esta operación`,
         action: 'Ver expediente',
+        type: 'expedient',
+        expedientId: source?.id,
       })
     }
     if (source?.status === 'CANCELADO') {
@@ -231,6 +264,8 @@ function computeLinkedAlerts(linksData) {
         title: `Expediente vinculado cancelado`,
         description: `${source?.code} ha sido cancelado. Revisa si afecta a las condiciones de esta operación.`,
         action: 'Ver vínculo',
+        type: 'expedient',
+        expedientId: source?.id,
       })
     }
   })
@@ -239,7 +274,24 @@ function computeLinkedAlerts(linksData) {
 }
 
 function AlertGroup({ title, color, bgColor, borderColor, icon: GroupIcon, items }) {
+  const navigate = useNavigate()
+  
   if (items.length === 0) return null
+  
+  const handleClick = (alert, e) => {
+    const route = getAlertRoute(alert)
+    if (route) {
+      navigate(route)
+    }
+  }
+  
+  const handleKeyDown = (alert, e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      handleClick(alert, e)
+    }
+  }
+  
   return (
     <div>
       <div className={`flex items-center gap-2 mb-2 px-3 py-1.5 rounded-lg ${bgColor} ${borderColor} border`}>
@@ -250,8 +302,22 @@ function AlertGroup({ title, color, bgColor, borderColor, icon: GroupIcon, items
       <div className="space-y-2">
         {items.map(alert => {
           const Icon = alert.icon
+          const route = getAlertRoute(alert)
+          const isClickable = !!route
+          
           return (
-            <div key={alert.id} className={`flex gap-3 p-3 rounded-lg border ${borderColor} bg-[var(--bg-color)]`}>
+            <div
+              key={alert.id}
+              role={isClickable ? 'button' : undefined}
+              tabIndex={isClickable ? 0 : undefined}
+              onClick={(e) => handleClick(alert, e)}
+              onKeyDown={(e) => handleKeyDown(alert, e)}
+              className={`flex gap-3 p-3 rounded-lg border ${borderColor} bg-[var(--bg-color)] transition-all duration-200 ${
+                isClickable 
+                  ? 'cursor-pointer hover:bg-[var(--sidebar-bg)] hover:shadow-md hover:border-opacity-50 active:scale-[0.99]' 
+                  : ''
+              }`}
+            >
               <Icon size={16} className={`${color} shrink-0 mt-0.5`} />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-[var(--text-main)] leading-tight">{alert.title}</p>

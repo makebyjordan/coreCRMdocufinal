@@ -21,10 +21,15 @@ async function getById(req, res) {
 
 async function create(req, res) {
   try {
-    const { password, ...data } = req.body;
+    const { email, name, password, role, phone, active } = req.body;
     const hashed = await bcrypt.hash(password, 12);
+    const data = {
+      email, name, password: hashed, role,
+      phone, active: Boolean(active)
+    };
+    Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
     const user = await prisma.user.create({
-      data: { ...data, password: hashed },
+      data,
       select: { id: true, name: true, email: true, role: true, phone: true, active: true },
     });
     res.status(201).json(user);
@@ -32,22 +37,32 @@ async function create(req, res) {
     if (err.code === 'P2002') {
       return res.status(409).json({ error: 'Ya existe un usuario con ese email' });
     }
-    throw err;
+    console.error(err);
+    res.status(500).json({ error: err.message });
   }
 }
 
 async function update(req, res) {
-  const { password, ...data } = req.body;
-  const updateData = { ...data };
-  if (password) {
-    updateData.password = await bcrypt.hash(password, 12);
+  try {
+    const { email, name, password, role, phone, active } = req.body;
+    const data = {
+      email, name, role,
+      phone, active: Boolean(active)
+    };
+    if (password !== undefined) {
+      data.password = await bcrypt.hash(password, 12);
+    }
+    Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data,
+      select: { id: true, name: true, email: true, role: true, phone: true, active: true },
+    });
+    res.json(user);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
   }
-  const user = await prisma.user.update({
-    where: { id: req.params.id },
-    data: updateData,
-    select: { id: true, name: true, email: true, role: true, phone: true, active: true },
-  });
-  res.json(user);
 }
 
 async function remove(req, res) {

@@ -1,12 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import {
   FolderKanban, TrendingUp, Clock, AlertTriangle,
   FileText, CheckCircle, XCircle, BarChart3,
+  Users, PenSquare, Phone, CalendarDays, ChevronRight,
 } from 'lucide-react'
+import { format, parseISO, isPast, formatDistanceToNow } from 'date-fns'
+import { es } from 'date-fns/locale'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import api from '../api/client'
-import { formatDistanceToNow } from 'date-fns'
-import { es } from 'date-fns/locale'
 
 const PHASE_LABELS = {
   CAPTACION: 'Captación', FORMULARIO: 'Formulario', DOCUMENTACION: 'Documentación',
@@ -24,6 +26,26 @@ const TYPE_COLORS = {
 }
 
 const STATUS_COLORS = { ACTIVO: '#10b981', BLOQUEADO: '#ef4444', COMPLETADO: '#3b82f6' }
+
+const EVENT_TYPE_CONFIG = {
+  VISITA: { icon: Users, color: '#0d9488', label: 'Visita' }, // teal-600
+  FIRMA: { icon: PenSquare, color: '#a855f7', label: 'Firma' }, // purple-500
+  LLAMADA: { icon: Phone, color: '#eab308', label: 'Llamada' }, // yellow-500
+  REUNION: { icon: CalendarDays, color: '#4f46e5', label: 'Reunión' }, // indigo-600
+  OTRO: { icon: CalendarDays, color: '#9ca3af', label: 'Otro' }, // gray-400
+}
+
+function getEventIcon(type) {
+  return EVENT_TYPE_CONFIG[type]?.icon || CalendarDays
+}
+
+function getEventColor(type) {
+  return EVENT_TYPE_CONFIG[type]?.color || '#9ca3af'
+}
+
+function getEventLabel(type) {
+  return EVENT_TYPE_CONFIG[type]?.label || type
+}
 
 function StatCard({ icon: Icon, label, value, color = 'blue', sub }) {
   const colors = {
@@ -69,6 +91,20 @@ export default function DashboardPage() {
     queryKey: ['dashboard-activity'],
     queryFn: () => api.get('/dashboard/activity').then(r => r.data),
   })
+
+  const { data: calendarEvents } = useQuery({
+    queryKey: ['dashboard-events'],
+    queryFn: () => api.get('/calendar?limit=10').then(r => r.data),
+    refetchInterval: 60_000,
+  })
+  
+  const navigate = useNavigate()
+  
+  // Get upcoming events (not in the past, not completed)
+  const upcomingEvents = calendarEvents
+    ?.filter(e => !isPast(parseISO(e.startAt)) && !e.completed)
+    ?.sort((a, b) => parseISO(a.startAt) - parseISO(b.startAt))
+    ?.slice(0, 5) || []
 
   const phaseData = stats?.byPhase
     ? Object.entries(stats.byPhase).map(([phase, count]) => ({
@@ -175,6 +211,68 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Próximos eventos del calendario */}
+      <div className="card p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 style={{ color: 'var(--text-main)' }} className="font-semibold flex items-center gap-2">
+            <CalendarDays size={18} className="text-blue-500" />
+            Próximos eventos
+          </h3>
+          <button 
+            onClick={() => navigate('/calendario')}
+            className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
+          >
+            Ver calendario <ChevronRight size={14} />
+          </button>
+        </div>
+        {upcomingEvents.length > 0 ? (
+          <div className="space-y-3">
+            {upcomingEvents.map(event => {
+              const Icon = getEventIcon(event.type)
+              const color = getEventColor(event.type)
+              return (
+                <div 
+                  key={event.id} 
+                  className="flex items-start gap-3 p-3 rounded-lg bg-[var(--sidebar-bg)] hover:bg-[var(--sidebar-bg)]/80 transition-colors cursor-pointer"
+                  onClick={() => navigate('/calendario')}
+                >
+                  <div 
+                    className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+                    style={{ backgroundColor: `${color}20`, color }}
+                  >
+                    <Icon size={18} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-[var(--text-main)] truncate">{event.title}</span>
+                      <span 
+                        className="text-[10px] px-1.5 py-0.5 rounded-full text-white font-medium"
+                        style={{ backgroundColor: color }}
+                      >
+                        {getEventLabel(event.type)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-[var(--text-muted)] mt-1">
+                      <span>{format(parseISO(event.startAt), 'EEEE d MMM, HH:mm', { locale: es })}</span>
+                      {event.expedient && (
+                        <span className="font-mono">{event.expedient.code}</span>
+                      )}
+                    </div>
+                    {event.client && (
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {event.client.firstName} {event.client.lastName}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <p className="text-gray-400 text-sm text-center py-6">No hay eventos próximos</p>
+        )}
+      </div>
 
       {/* Actividad reciente */}
       <div className="card p-5">

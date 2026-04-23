@@ -4,6 +4,7 @@ const workflowService = require('../services/workflow.service');
 const checklistGenerator = require('../services/checklist.generator');
 const driveService = require('../services/drive.service');
 const notificationEngine = require('../services/notification.engine');
+const calendarSync = require('../services/calendar-sync.service');
 const logger = require('../config/logger');
 
 // ─── Generar código de expediente ─────────────────────────────────────────────
@@ -121,15 +122,44 @@ async function getById(req, res) {
 // ─── Crear expediente ─────────────────────────────────────────────────────────
 async function create(req, res) {
   const code = await generateCode();
-  const { clientId, operationType, operationSize = 'INDIVIDUAL', assignments = [], ...rest } = req.body;
+  const {
+    clientId, operationType, operationSize = 'INDIVIDUAL', assignments = [],
+    propertyAddress, propertyCity, propertyRef, propertyPrice, propertyM2,
+    propertyRooms, propertyBaths, propertyCatastral, propertyYear, propertyStatus,
+    propertyOrientation, propertyParking, propertyStorage, commissionFixed,
+    commissionPercent, commissionInvoiced, commissionPaid, mortgageStatus,
+    mortgageEntity, arrasAmount, arrasDeadline, notaryName, notaryDate,
+    notaryAddress, valuationEstimated, valuationMarketNotes, parentExpedientId,
+    expedientRole, notaryFees, registryFees, taxesAmount, linkedOperationType,
+    dependencyStatus, advanceConditions, exclusivityStart, exclusivityMonths, exclusivityEnd, notes
+  } = req.body;
 
-  const expedient = await prisma.expedient.create({
-    data: {
-      code, clientId, operationType, operationSize, ...rest,
-      currentPhase: 'CAPTACION',
-      status: 'ACTIVO',
-    },
-  });
+  const data = {
+    code, clientId, operationType, operationSize,
+    propertyAddress, propertyCity, propertyRef, propertyPrice: propertyPrice ? parseFloat(propertyPrice) : null,
+    propertyM2: propertyM2 ? parseFloat(propertyM2) : null, propertyRooms, propertyBaths,
+    propertyCatastral, propertyYear, propertyStatus, propertyOrientation,
+    propertyParking: Boolean(propertyParking), propertyStorage: Boolean(propertyStorage),
+    commissionFixed: commissionFixed ? parseFloat(commissionFixed) : null,
+    commissionPercent: commissionPercent ? parseFloat(commissionPercent) : null,
+    commissionInvoiced: Boolean(commissionInvoiced), commissionPaid: Boolean(commissionPaid),
+    mortgageStatus, mortgageEntity, arrasAmount: arrasAmount ? parseFloat(arrasAmount) : null,
+    arrasDeadline: arrasDeadline ? new Date(arrasDeadline) : null, notaryName,
+    notaryDate: notaryDate ? new Date(notaryDate) : null, notaryAddress,
+    valuationEstimated: valuationEstimated ? parseFloat(valuationEstimated) : null,
+    valuationMarketNotes, parentExpedientId, expedientRole,
+    notaryFees: notaryFees ? parseFloat(notaryFees) : null,
+    registryFees: registryFees ? parseFloat(registryFees) : null,
+    taxesAmount: taxesAmount ? parseFloat(taxesAmount) : null,
+    linkedOperationType, dependencyStatus, advanceConditions,
+    exclusivityStart: exclusivityStart ? new Date(exclusivityStart) : null,
+    exclusivityMonths, exclusivityEnd: exclusivityEnd ? new Date(exclusivityEnd) : null,
+    notes, currentPhase: 'CAPTACION', status: 'ACTIVO'
+  };
+
+  Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
+
+  const expedient = await prisma.expedient.create({ data });
 
   // Asignar comercial que crea el expediente como primario
   await prisma.expedientAssignment.create({
@@ -176,7 +206,42 @@ async function create(req, res) {
 
 // ─── Actualizar expediente ────────────────────────────────────────────────────
 async function update(req, res) {
-  const { assignments, ...data } = req.body;
+  const {
+    assignments,
+    propertyAddress, propertyCity, propertyRef, propertyPrice, propertyM2,
+    propertyRooms, propertyBaths, propertyCatastral, propertyYear, propertyStatus,
+    propertyOrientation, propertyParking, propertyStorage, commissionFixed,
+    commissionPercent, commissionInvoiced, commissionPaid, mortgageStatus,
+    mortgageEntity, arrasAmount, arrasDeadline, notaryName, notaryDate,
+    notaryAddress, valuationEstimated, valuationMarketNotes, parentExpedientId,
+    expedientRole, notaryFees, registryFees, taxesAmount, linkedOperationType,
+    dependencyStatus, advanceConditions, exclusivityStart, exclusivityMonths, exclusivityEnd, notes
+  } = req.body;
+
+  const data = {
+    propertyAddress, propertyCity, propertyRef, propertyPrice: propertyPrice ? parseFloat(propertyPrice) : null,
+    propertyM2: propertyM2 ? parseFloat(propertyM2) : null, propertyRooms, propertyBaths,
+    propertyCatastral, propertyYear, propertyStatus, propertyOrientation,
+    propertyParking: Boolean(propertyParking), propertyStorage: Boolean(propertyStorage),
+    commissionFixed: commissionFixed ? parseFloat(commissionFixed) : null,
+    commissionPercent: commissionPercent ? parseFloat(commissionPercent) : null,
+    commissionInvoiced: Boolean(commissionInvoiced), commissionPaid: Boolean(commissionPaid),
+    mortgageStatus, mortgageEntity, arrasAmount: arrasAmount ? parseFloat(arrasAmount) : null,
+    arrasDeadline: arrasDeadline ? new Date(arrasDeadline) : null, notaryName,
+    notaryDate: notaryDate ? new Date(notaryDate) : null, notaryAddress,
+    valuationEstimated: valuationEstimated ? parseFloat(valuationEstimated) : null,
+    valuationMarketNotes, parentExpedientId, expedientRole,
+    notaryFees: notaryFees ? parseFloat(notaryFees) : null,
+    registryFees: registryFees ? parseFloat(registryFees) : null,
+    taxesAmount: taxesAmount ? parseFloat(taxesAmount) : null,
+    linkedOperationType, dependencyStatus, advanceConditions,
+    exclusivityStart: exclusivityStart ? new Date(exclusivityStart) : null,
+    exclusivityMonths, exclusivityEnd: exclusivityEnd ? new Date(exclusivityEnd) : null,
+    notes
+  };
+
+  Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
+
   const expedient = await prisma.expedient.update({
     where: { id: req.params.id },
     data,
@@ -321,16 +386,29 @@ async function getBuyers(req, res) {
 }
 
 async function addBuyer(req, res) {
-  const buyer = await prisma.buyer.create({
-    data: { ...req.body, expedientId: req.params.id },
-  });
+  const { name, email, phone, offer, notes, accepted } = req.body;
+  const data = {
+    name, email, phone,
+    offer: offer ? parseFloat(offer) : null,
+    notes, accepted: Boolean(accepted),
+    expedientId: req.params.id
+  };
+  Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
+  const buyer = await prisma.buyer.create({ data });
   res.status(201).json(buyer);
 }
 
 async function updateBuyer(req, res) {
+  const { name, email, phone, offer, notes, accepted } = req.body;
+  const data = {
+    name, email, phone,
+    offer: offer ? parseFloat(offer) : null,
+    notes, accepted: Boolean(accepted)
+  };
+  Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
   const buyer = await prisma.buyer.update({
     where: { id: req.params.buyerId },
-    data: req.body,
+    data,
   });
   res.json(buyer);
 }
@@ -424,6 +502,115 @@ async function setExpedientRole(req, res) {
   res.json(updated);
 }
 
+// ─── Firmas ────────────────────────────────────────────────────────────────────
+async function getSignatures(req, res) {
+  const signatures = await prisma.signature.findMany({
+    where: { expedientId: req.params.id },
+    orderBy: { createdAt: 'desc' },
+    include: { calendarEvent: { select: { id: true, startAt: true, completed: true } } },
+  });
+  res.json(signatures);
+}
+
+async function createSignature(req, res) {
+  const { documentName, signerName, signerEmail, signerRole, expiresAt, signUrl, externalId } = req.body;
+  const expedientId = req.params.id;
+  
+  // Get expedient for client info
+  const expedient = await prisma.expedient.findUnique({
+    where: { id: expedientId },
+    select: { clientId: true, code: true },
+  });
+  
+  if (!expedient) return res.status(404).json({ error: 'Expediente no encontrado' });
+
+  // Create signature and sync with calendar
+  const result = await prisma.$transaction(async (tx) => {
+    // Create signature
+    const signature = await tx.signature.create({
+      data: {
+        expedientId,
+        documentName,
+        signerName,
+        signerEmail,
+        signerRole,
+        status: signUrl ? 'ENVIADO' : 'PENDIENTE',
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
+        signUrl,
+        externalId,
+      },
+      include: { expedient: { select: { clientId: true, code: true } } },
+    });
+
+    // Create calendar event
+    const eventData = calendarSync.buildCalendarEventFromSignature(signature);
+    const calendarEvent = await tx.calendarEvent.create({
+      data: {
+        ...eventData,
+        signatureId: signature.id,
+        createdById: req.user.id,
+      },
+    });
+
+    // Update signature with calendarEventId
+    await tx.signature.update({
+      where: { id: signature.id },
+      data: { calendarEventId: calendarEvent.id },
+    });
+
+    return { ...signature, calendarEvent };
+  });
+
+  res.status(201).json(result);
+}
+
+async function updateSignature(req, res) {
+  const { documentName, signerName, signerEmail, signerRole, expiresAt, signUrl, status } = req.body;
+  const signatureId = req.params.signatureId;
+
+  const signature = await prisma.signature.findUnique({
+    where: { id: signatureId },
+    include: { expedient: { select: { clientId: true, code: true } } },
+  });
+
+  if (!signature) return res.status(404).json({ error: 'Firma no encontrada' });
+
+  const data = {
+    documentName, signerName, signerEmail, signerRole,
+    expiresAt: expiresAt ? new Date(expiresAt) : null,
+    signUrl, status,
+  };
+  Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
+
+  // Update signature and sync calendar
+  const result = await calendarSync.updateSignatureStatus(signatureId, status || signature.status, data);
+  
+  res.json(result);
+}
+
+async function updateSignatureStatus(req, res) {
+  const { status, signedAt, expiresAt, signUrl } = req.body;
+  const signatureId = req.params.signatureId;
+
+  const additionalData = {};
+  if (signedAt) additionalData.signedAt = new Date(signedAt);
+  if (expiresAt) additionalData.expiresAt = new Date(expiresAt);
+  if (signUrl) additionalData.signUrl = signUrl;
+
+  const result = await calendarSync.updateSignatureStatus(signatureId, status, additionalData);
+  
+  res.json(result);
+}
+
+async function deleteSignature(req, res) {
+  const signatureId = req.params.signatureId;
+  
+  await calendarSync.deleteSignatureCalendarEvent(signatureId);
+  await prisma.signature.delete({ where: { id: signatureId } });
+  
+  res.status(204).send();
+}
+
 module.exports = {
   list, kanban, getById, create, update, remove,
   advancePhase, blockExpedient, unblockExpedient, closeExpedient,
@@ -432,4 +619,5 @@ module.exports = {
   getBuyers, addBuyer, updateBuyer, removeBuyer,
   getPhaseHistory,
   getLinkedExpedients, linkExpedient, unlinkExpedient, setExpedientRole,
+  getSignatures, createSignature, updateSignature, updateSignatureStatus, deleteSignature,
 };

@@ -5,7 +5,6 @@ generator client {
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
 }
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
@@ -285,17 +284,19 @@ model ExpedientClient {
 }
 
 model Visit {
-  id            String   @id @default(cuid())
-  expedientId   String
-  date          DateTime @default(now())
-  visitorName   String
-  visitorPhone  String?
-  feedback      String?
-  interestLevel String   @default("MID") // LOW, MID, HIGH
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(cuid())
+  expedientId     String
+  date            DateTime @default(now())
+  visitorName     String
+  visitorPhone    String?
+  feedback        String?
+  interestLevel   String   @default("MID") // LOW, MID, HIGH
+  calendarEventId String?  @unique
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  expedient Expedient @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  expedient     Expedient     @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  calendarEvent CalendarEvent? @relation(fields: [calendarEventId], references: [id])
 
   @@map("visits")
 }
@@ -457,22 +458,24 @@ model DocumentValidation {
 }
 
 model Signature {
-  id           String          @id @default(cuid())
-  expedientId  String
-  documentName String
-  signerName   String
-  signerEmail  String
-  signerRole   String
-  status       SignatureStatus  @default(PENDIENTE)
-  externalId   String?
-  signUrl      String?
-  signedAt     DateTime?
-  expiresAt    DateTime?
-  reminderSent Boolean         @default(false)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  id              String          @id @default(cuid())
+  expedientId     String
+  documentName    String
+  signerName      String
+  signerEmail     String
+  signerRole      String
+  status          SignatureStatus  @default(PENDIENTE)
+  externalId      String?
+  signUrl         String?
+  signedAt        DateTime?
+  expiresAt       DateTime?
+  reminderSent    Boolean         @default(false)
+  calendarEventId String?         @unique
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
-  expedient Expedient @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  expedient     Expedient     @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  calendarEvent CalendarEvent? @relation(fields: [calendarEventId], references: [id])
 
   @@map("signatures")
 }
@@ -502,12 +505,17 @@ model CalendarEvent {
   notes       String?
   clientId    String?
   expedientId String?
+  visitId     String?  @unique
+  signatureId String?  @unique
+  completed   Boolean  @default(false)
   createdById String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   client    Client?    @relation(fields: [clientId], references: [id], onDelete: SetNull)
   expedient Expedient? @relation(fields: [expedientId], references: [id], onDelete: SetNull)
+  visit     Visit?     @relation
+  signature Signature? @relation
   createdBy User?      @relation(fields: [createdById], references: [id])
 
   @@map("calendar_events")
