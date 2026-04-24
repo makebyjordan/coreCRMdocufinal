@@ -19,8 +19,6 @@ import OperationTimeline from '../components/Expedients/OperationTimeline'
 import LinkedExpedientsPanel from '../components/Expedients/LinkedExpedientsPanel'
 import FinancialSimulator from '../components/Expedients/FinancialSimulator'
 import CombinedFinancialCalculator from '../components/Expedients/CombinedFinancialCalculator'
-import ClientJourneyPanel from '../components/Expedients/ClientJourneyPanel'
-
 const TABS = [
   { id: 'dashboard', label: 'Estado', icon: LayoutDashboard },
   { id: 'checklist', label: 'Checklist', icon: CheckCircle },
@@ -33,7 +31,6 @@ const TABS = [
   { id: 'linked', label: 'Vinculados', icon: Link2 },
   { id: 'financial', label: 'Financiero', icon: Calculator },
   { id: 'combined', label: 'Calc. Combinada', icon: Calculator },
-  { id: 'journey', label: 'Historial Cliente', icon: Users },
   { id: 'notifications', label: 'Notificaciones', icon: Bell },
   { id: 'history', label: 'Historial', icon: History },
 ]
@@ -244,8 +241,9 @@ export default function ExpedientDetailPage() {
     },
   })
 
-  if (isLoading) return <div className="text-center text-gray-400 py-20">Cargando expediente...</div>
-  if (!exp) return <div className="text-center text-red-500 py-20">Expediente no encontrado</div>
+  // Manejo de estados de carga y error
+  if (isLoading) return <div className="text-center py-20 text-gray-400">Cargando expediente...</div>
+  if (!exp) return <div className="text-center py-20 text-red-500">Expediente no encontrado o error al cargar</div>
 
   const clientName = exp.client?.firstName
     ? `${exp.client.firstName} ${exp.client.lastName || ''}`.trim()
@@ -276,6 +274,14 @@ export default function ExpedientDetailPage() {
           <p className="text-gray-500 text-sm mt-0.5">
             {clientName} · {exp.propertyAddress || 'Sin dirección'}
           </p>
+          {exp.clientId && (
+            <Link
+              to={`/clients/${exp.clientId}`}
+              className="text-xs text-[var(--primary-color)] hover:underline mt-0.5 inline-block"
+            >
+              Ver ficha completa del cliente →
+            </Link>
+          )}
         </div>
 
         {/* Acciones */}
@@ -356,7 +362,6 @@ export default function ExpedientDetailPage() {
         {tab === 'linked'        && <LinkedExpedientsPanel expedientId={id} />}
         {tab === 'financial'     && <FinancialSimulator exp={exp} />}
         {tab === 'combined'      && <CombinedFinancialCalculator exp={exp} />}
-        {tab === 'journey'       && <ClientJourneyPanel clientId={exp.clientId} currentExpedientId={id} />}
         {tab === 'notifications' && <NotificationLog expedientId={id} />}
         {tab === 'history'       && <PhaseHistoryTab history={exp.phaseHistory} operationType={exp.operationType} />}
       </div>

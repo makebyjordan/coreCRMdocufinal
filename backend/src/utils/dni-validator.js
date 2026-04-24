@@ -101,7 +101,13 @@ function isValidNIF(value) {
 function isValidDocument(value) {
   if (!value) return false;
   const doc = normalizeDni(value);
-  return isValidDNI(doc) || isValidNIE(doc) || isValidNIF(doc);
+  // Validación permisiva: acepta formato DNI (8 dígitos + letra) sin verificar letra de control
+  if (/^\d{8}[A-Z]$/i.test(doc)) return true;
+  // Validación permisiva: acepta formato NIE (X/Y/Z + 7 dígitos + letra)
+  if (/^[XYZ]\d{7}[A-Z]$/i.test(doc)) return true;
+  // Validación permisiva: NIF simplificado
+  if (/^[A-HJNP-SW]\d{7}[0-9A-J]$|^[0-9]\d{7}[A-J]$/i.test(doc)) return true;
+  return false;
 }
 
 /**

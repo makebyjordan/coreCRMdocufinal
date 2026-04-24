@@ -2,11 +2,10 @@ import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft, User, Phone, Mail, MapPin, FileText,
-  TrendingUp, Activity, Users, Calendar, Link2,
-  MessageSquare, Bell, Hash, Tag, Thermometer,
-  LifeBuoy, Briefcase, Clock, AlertCircle,
-  Download
+  ArrowLeft, User, Mail, MapPin, FileText,
+  TrendingUp, Activity, Calendar, Link2,
+  MessageSquare, Hash, Tag, Thermometer,
+  LifeBuoy, Briefcase, Clock, Download, History, Phone,
 } from 'lucide-react'
 import api from '../api/client'
 import { exportClientToPDF } from '../utils/clientPdfExport'
@@ -16,6 +15,7 @@ import ClientTasksPanel from '../components/Clients/ClientTasksPanel'
 import ClientRelationsPanel from '../components/Clients/ClientRelationsPanel'
 import ClientDocumentsPanel from '../components/Clients/ClientDocumentsPanel'
 import ClientCommunicationsPanel from '../components/Clients/ClientCommunicationsPanel'
+import ClientHistoryPanel from '../components/Clients/ClientHistoryPanel'
 
 const TABS = [
   { id: 'overview', label: 'Resumen', icon: User },
@@ -25,6 +25,7 @@ const TABS = [
   { id: 'documents', label: 'Documentos', icon: FileText },
   { id: 'communications', label: 'Comunicaciones', icon: Mail },
   { id: 'relations', label: 'Relaciones', icon: Link2 },
+  { id: 'history', label: 'Historial', icon: History },
 ]
 
 const SCORE_CONFIG = {
@@ -80,6 +81,12 @@ export default function ClientDetailPage() {
   const { data: clientRelations } = useQuery({
     queryKey: ['client-relations-pdf', id],
     queryFn: () => api.get(`/clients/${id}/relations`).then(r => r.data),
+    enabled: !!id,
+  })
+
+  const { data: summary } = useQuery({
+    queryKey: ['client-summary', id],
+    queryFn: () => api.get(`/clients/${id}/summary`).then(r => r.data),
     enabled: !!id,
   })
 
@@ -195,6 +202,8 @@ export default function ClientDetailPage() {
             client={client}
             stats={stats}
             expedients={expedients}
+            summary={summary}
+            onViewHistory={() => setTab('history')}
           />
         )}
         {tab === 'timeline' && <ClientActivityTimeline clientId={id} />}
@@ -203,6 +212,7 @@ export default function ClientDetailPage() {
         {tab === 'documents' && <ClientDocumentsPanel clientId={id} />}
         {tab === 'communications' && <ClientCommunicationsPanel clientId={id} />}
         {tab === 'relations' && <ClientRelationsPanel clientId={id} />}
+        {tab === 'history' && <ClientHistoryPanel clientId={id} />}
       </div>
     </div>
   )
@@ -210,10 +220,14 @@ export default function ClientDetailPage() {
 
 // ─── Sub-componentes ──────────────────────────────────────────────────────────
 
-function ClientOverview({ client, stats, expedients }) {
+function ClientOverview({ client, stats, expedients, summary, onViewHistory }) {
   const fullName = client.firstName
     ? `${client.firstName} ${client.lastName || ''}`.trim()
     : client.companyName || 'Sin nombre'
+
+  const es = summary?.expedientsStats
+  const rs = summary?.resourcesStats
+  const recentExps = summary?.recentExpedients ?? expedients?.slice(0, 3) ?? []
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -295,47 +309,49 @@ function ClientOverview({ client, stats, expedients }) {
         )}
       </div>
 
-      {/* Stats */}
+      {/* Métricas de expedientes (5 KPIs) */}
       <div className="card p-5 space-y-4">
         <h3 className="font-semibold text-[var(--text-main)] flex items-center gap-2">
           <TrendingUp size={16} className="text-[var(--primary-color)]" />
           Métricas
         </h3>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="p-3 rounded-lg bg-[var(--sidebar-bg)] text-center">
-            <p className="text-2xl font-bold text-[var(--text-main)]">
-              {stats?.totalExpedients || 0}
-            </p>
-            <p className="text-[10px] text-[var(--text-muted)]">Expedientes totales</p>
+        <div className="grid grid-cols-3 gap-2">
+          <div className="p-2.5 rounded-lg bg-[var(--sidebar-bg)] text-center">
+            <p className="text-xl font-bold text-[var(--text-main)]">{es?.total ?? stats?.totalExpedients ?? 0}</p>
+            <p className="text-[10px] text-[var(--text-muted)]">Total</p>
           </div>
-          <div className="p-3 rounded-lg bg-green-500/10 text-center">
-            <p className="text-2xl font-bold text-green-600">
-              {stats?.activeExpedients || 0}
-            </p>
+          <div className="p-2.5 rounded-lg bg-green-500/10 text-center">
+            <p className="text-xl font-bold text-green-600">{es?.active ?? stats?.activeExpedients ?? 0}</p>
             <p className="text-[10px] text-[var(--text-muted)]">Activos</p>
           </div>
-          <div className="p-3 rounded-lg bg-blue-500/10 text-center">
-            <p className="text-2xl font-bold text-blue-600">
-              {stats?.closedExpedients || 0}
-            </p>
-            <p className="text-[10px] text-[var(--text-muted)]">Cerrados</p>
+          <div className="p-2.5 rounded-lg bg-blue-500/10 text-center">
+            <p className="text-xl font-bold text-blue-600">{es?.completed ?? stats?.closedExpedients ?? 0}</p>
+            <p className="text-[10px] text-[var(--text-muted)]">Completados</p>
           </div>
-          <div className="p-3 rounded-lg bg-[var(--sidebar-bg)] text-center">
-            <p className="text-2xl font-bold text-[var(--text-main)]">
-              {stats?.daysSinceLastContact !== null ? stats.daysSinceLastContact : '-'}
+          <div className="p-2.5 rounded-lg bg-gray-500/10 text-center">
+            <p className="text-xl font-bold text-gray-500">{es?.cancelled ?? 0}</p>
+            <p className="text-[10px] text-[var(--text-muted)]">Cancelados</p>
+          </div>
+          <div className="p-2.5 rounded-lg bg-red-500/10 text-center">
+            <p className="text-xl font-bold text-red-500">{es?.blocked ?? 0}</p>
+            <p className="text-[10px] text-[var(--text-muted)]">Bloqueados</p>
+          </div>
+          <div className="p-2.5 rounded-lg bg-[var(--sidebar-bg)] text-center">
+            <p className="text-xl font-bold text-[var(--text-main)]">
+              {stats?.daysSinceLastContact ?? '-'}
             </p>
             <p className="text-[10px] text-[var(--text-muted)]">Días sin contacto</p>
           </div>
         </div>
 
-        {stats?.totalOperationsValue > 0 && (
+        {(es?.totalCommissionValue > 0 || stats?.totalOperationsValue > 0) && (
           <div className="p-3 rounded-lg bg-[var(--primary-color)]/10">
             <p className="text-xs text-[var(--text-muted)] flex items-center gap-1">
-              <Briefcase size={12} /> Valor total operaciones
+              <Briefcase size={12} /> Valor estimado en comisiones
             </p>
             <p className="text-lg font-bold text-[var(--primary-color)]">
-              {Number(stats.totalOperationsValue).toLocaleString('es-ES')} €
+              {Number(es?.totalCommissionValue ?? stats?.totalOperationsValue ?? 0).toLocaleString('es-ES')} €
             </p>
           </div>
         )}
@@ -348,21 +364,21 @@ function ClientOverview({ client, stats, expedients }) {
         )}
       </div>
 
-      {/* Expedientes */}
+      {/* Expedientes recientes */}
       <div className="card p-5 space-y-4">
         <h3 className="font-semibold text-[var(--text-main)] flex items-center gap-2">
           <FileText size={16} className="text-[var(--primary-color)]" />
           Expedientes recientes
         </h3>
 
-        {expedients?.length === 0 && (
+        {recentExps.length === 0 && (
           <div className="text-center py-8 text-gray-400 text-sm">
             Sin expedientes registrados
           </div>
         )}
 
         <div className="space-y-3">
-          {expedients?.slice(0, 5).map(exp => (
+          {recentExps.map(exp => (
             <Link
               key={exp.id}
               to={`/expedients/${exp.id}`}
@@ -372,9 +388,11 @@ function ClientOverview({ client, stats, expedients }) {
                 <div>
                   <p className="font-mono text-xs font-bold text-[var(--primary-color)]">{exp.code}</p>
                   <p className="text-xs text-[var(--text-muted)] mt-0.5">{exp.operationType}</p>
-                  <p className="text-[10px] text-[var(--text-muted)] mt-1 flex items-center gap-1">
-                    <Briefcase size={9} /> {exp.clientRole || 'CLIENTE'}
-                  </p>
+                  {exp.currentPhase && (
+                    <p className="text-[10px] text-[var(--text-muted)] mt-0.5 flex items-center gap-1">
+                      <Clock size={9} /> {exp.currentPhase}
+                    </p>
+                  )}
                 </div>
                 <span className={`badge text-[10px] ${
                   exp.status === 'ACTIVO' ? 'bg-green-500/20 text-green-600' :
@@ -393,12 +411,76 @@ function ClientOverview({ client, stats, expedients }) {
           ))}
         </div>
 
-        {expedients?.length > 5 && (
-          <p className="text-xs text-center text-[var(--text-muted)]">
-            Y {expedients.length - 5} expedientes más...
-          </p>
-        )}
+        <button
+          onClick={onViewHistory}
+          className="w-full text-xs text-[var(--primary-color)] hover:underline text-center pt-1"
+        >
+          Ver historial completo →
+        </button>
       </div>
+
+      {/* Recursos */}
+      {rs && (
+        <div className="card p-5 space-y-3">
+          <h3 className="font-semibold text-[var(--text-main)] flex items-center gap-2">
+            <Activity size={16} className="text-[var(--primary-color)]" />
+            Recursos
+          </h3>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div className="flex items-center justify-between p-2 rounded-lg bg-[var(--sidebar-bg)]">
+              <span className="flex items-center gap-1.5 text-[var(--text-muted)] text-xs">
+                <MessageSquare size={12} /> Notas
+              </span>
+              <span className="font-bold text-[var(--text-main)]">{rs.notes}</span>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-lg bg-[var(--sidebar-bg)]">
+              <span className="flex items-center gap-1.5 text-[var(--text-muted)] text-xs">
+                <Calendar size={12} /> Tareas
+              </span>
+              <span className="font-bold text-[var(--text-main)]">
+                {rs.tasks.pending}<span className="text-gray-400 text-[10px]">/{rs.tasks.pending + rs.tasks.completed}</span>
+              </span>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-lg bg-[var(--sidebar-bg)]">
+              <span className="flex items-center gap-1.5 text-[var(--text-muted)] text-xs">
+                <FileText size={12} /> Documentos
+              </span>
+              <span className="font-bold text-[var(--text-main)]">{rs.documents}</span>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-lg bg-[var(--sidebar-bg)]">
+              <span className="flex items-center gap-1.5 text-[var(--text-muted)] text-xs">
+                <Mail size={12} /> Comunicaciones
+              </span>
+              <span className="font-bold text-[var(--text-main)]">{rs.communications}</span>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-lg bg-[var(--sidebar-bg)] col-span-2">
+              <span className="flex items-center gap-1.5 text-[var(--text-muted)] text-xs">
+                <Link2 size={12} /> Relaciones
+              </span>
+              <span className="font-bold text-[var(--text-main)]">{rs.relations}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Última actividad */}
+      {summary?.lastActivity && (
+        <div className="card p-5 space-y-2">
+          <h3 className="font-semibold text-[var(--text-main)] flex items-center gap-2">
+            <Clock size={16} className="text-[var(--primary-color)]" />
+            Última actividad
+          </h3>
+          <p className="text-sm text-[var(--text-main)]">{summary.lastActivity.description}</p>
+          <p className="text-xs text-[var(--text-muted)]">
+            {new Date(summary.lastActivity.date).toLocaleDateString('es-ES', {
+              day: 'numeric', month: 'long', year: 'numeric',
+            })}
+          </p>
+          <span className="badge bg-[var(--sidebar-bg)] text-[10px] text-[var(--text-muted)]">
+            {summary.lastActivity.type}
+          </span>
+        </div>
+      )}
 
       {/* Preferencias */}
       {client.preferences && Object.keys(client.preferences).length > 0 && (

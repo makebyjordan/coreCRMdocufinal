@@ -364,7 +364,7 @@ async function advance(expedient, user, notes, decision) {
   } catch (_) { /* no bloquear si el módulo no existe */ }
 
   // Determinar la siguiente fase inteligentemente
-  let nextPhase = getNextPhase(expedient, currentPhase, decision);
+  let nextPhase = await getNextPhase(expedient, currentPhase, decision);
   
   if (transition.conditional && !decision) {
     return { error: 'Esta fase requiere una decisión: SI o NO' };

@@ -3,14 +3,52 @@ require('express-async-errors');
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const { PrismaClient } = require('@prisma/client');
 const logger = require('./src/config/logger');
+const { prisma } = require('./src/config/db'); // Singleton PrismaClient
 const routes = require('./src/routes');
 const { startPostventaScheduler } = require('./src/jobs/postventa.scheduler');
 
 const app = express();
-const prisma = new PrismaClient();
 const PORT = process.env.PORT || 4000;
+
+// ─── Validaciones de seguridad críticas ──────────────────────────────────────
+const CRITICAL_SECRETS = ['JWT_SECRET', 'DATABASE_URL'];
+const PLACEHOLDER_PATTERNS = [
+  'cambia_este',
+  'tu-correo',
+  'contraseña',
+  'example',
+  'placeholder',
+  '[PROJECT-REF]',
+  '[PASSWORD]',
+];
+
+function validateCriticalEnv() {
+  const errors = [];
+
+  for (const secret of CRITICAL_SECRETS) {
+    const value = process.env[secret];
+    if (!value) {
+      errors.push(`❌ ${secret} no está definido`);
+    } else if (PLACEHOLDER_PATTERNS.some(p => value.toLowerCase().includes(p.toLowerCase()))) {
+      errors.push(`❌ ${secret} contiene valor placeholder: ${value.substring(0, 20)}...`);
+    }
+  }
+
+  // Validar longitud mínima de JWT_SECRET
+  if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
+    errors.push('❌ JWT_SECRET debe tener al menos 32 caracteres');
+  }
+
+  if (errors.length > 0) {
+    console.error('\n🔴 ERRORES DE SEGURIDAD CRÍTICOS:');
+    errors.forEach(e => console.error(e));
+    console.error('\n⚠️  El servidor no puede arrancar hasta que configures correctamente el .env\n');
+    process.exit(1);
+  }
+
+  console.log('✅ Validaciones de seguridad pasadas');
+}
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 app.use(cors({
@@ -39,6 +77,9 @@ app.use((err, req, res, next) => {
 // ─── Inicio ───────────────────────────────────────────────────────────────────
 async function main() {
   try {
+    // Validar variables de entorno críticas antes de arrancar
+    validateCriticalEnv();
+
     // await prisma.$connect();
     logger.info('Aviso: Conexión explícita a PostgreSQL desactivada temporalmente en el arranque.');
 

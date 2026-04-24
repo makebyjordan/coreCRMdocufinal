@@ -452,6 +452,91 @@ async function getAggregatedTimeline(req, res) {
   res.json(timeline);
 }
 
+// GET /clients/:id/summary - Resumen agregado del cliente (hub central)
+async function getSummary(req, res) {
+  const { id } = req.params;
+
+  const [client, expedients] = await Promise.all([
+    prisma.client.findUnique({
+      where: { id },
+      select: {
+        id: true, firstName: true, lastName: true, companyName: true,
+        email: true, phone: true, type: true, score: true, lifecycleStage: true,
+      },
+    }),
+    prisma.expedient.findMany({
+      where: { clientId: id },
+      select: {
+        id: true, code: true, operationType: true, status: true,
+        currentPhase: true, propertyAddress: true, propertyPrice: true,
+        commissionFixed: true, commissionPercent: true, openedAt: true,
+        phaseHistory: {
+          orderBy: { createdAt: 'asc' },
+          select: { fromPhase: true, toPhase: true, createdAt: true },
+        },
+      },
+      orderBy: { openedAt: 'desc' },
+    }),
+  ]);
+
+  if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
+
+  const expedientIds = expedients.map(e => e.id);
+
+  const [notesCount, tasks, docsCount, commsCount, relationsCount, lastActivity] = await Promise.all([
+    prisma.clientNote.count({ where: { clientId: id } }),
+    prisma.task.findMany({ where: { clientId: id }, select: { completedAt: true } }),
+    prisma.document.count({
+      where: {
+        OR: expedientIds.length > 0
+          ? [{ ownerClientId: id }, { expedientId: { in: expedientIds } }]
+          : [{ ownerClientId: id }],
+      },
+    }),
+    prisma.clientCommunication.count({ where: { clientId: id } }),
+    prisma.clientRelation.count({ where: { OR: [{ clientAId: id }, { clientBId: id }] } }),
+    prisma.activityEvent.findFirst({
+      where: { clientId: id },
+      orderBy: { createdAt: 'desc' },
+      select: { type: true, createdAt: true, title: true },
+    }),
+  ]);
+
+  const totalCommissionValue = expedients.reduce((sum, e) => {
+    if (e.commissionFixed) return sum + Number(e.commissionFixed);
+    if (e.commissionPercent && e.propertyPrice)
+      return sum + Number(e.propertyPrice) * (Number(e.commissionPercent) / 100);
+    return sum;
+  }, 0);
+
+  res.json({
+    client,
+    expedientsStats: {
+      total: expedients.length,
+      active: expedients.filter(e => e.status === 'ACTIVO').length,
+      completed: expedients.filter(e => e.status === 'COMPLETADO').length,
+      cancelled: expedients.filter(e => e.status === 'CANCELADO').length,
+      blocked: expedients.filter(e => e.status === 'BLOQUEADO').length,
+      totalCommissionValue,
+    },
+    resourcesStats: {
+      notes: notesCount,
+      tasks: {
+        pending: tasks.filter(t => !t.completedAt).length,
+        completed: tasks.filter(t => t.completedAt).length,
+      },
+      documents: docsCount,
+      communications: commsCount,
+      relations: relationsCount,
+    },
+    recentExpedients: expedients.slice(0, 3).map(({ phaseHistory, commissionFixed, commissionPercent, ...rest }) => rest),
+    lastActivity: lastActivity
+      ? { type: lastActivity.type, date: lastActivity.createdAt, description: lastActivity.title }
+      : null,
+    phaseHistorySummary: expedients.flatMap(e => e.phaseHistory || []),
+  });
+}
+
 // GET /clients/stats/dashboard - Stats globales para dashboard
 async function getDashboardStats(req, res) {
   const [
@@ -504,4 +589,5 @@ module.exports = {
   getClientStats,
   getAggregatedTimeline,
   getDashboardStats,
+  getSummary,
 };

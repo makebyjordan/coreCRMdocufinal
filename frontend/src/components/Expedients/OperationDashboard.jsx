@@ -1,29 +1,40 @@
 import { CheckCircle, Clock, AlertTriangle, TrendingUp, Home, Users, FileText, Calendar } from 'lucide-react'
 
 const ALL_PHASE_LABELS = {
-  // Legacy
+  // Flujo estándar
   CAPTACION: 'Captación', VALORACION: 'Valoración', FORMULARIO: 'Formulario', DOCUMENTACION: 'Documentación',
   VALIDACION: 'Validación', ACUERDO: 'Acuerdo/Exclusiva', MARKETING_FORMULARIO: 'Brief Marketing',
   MARKETING_EJECUCION: 'Producción Mkt', VISITAS: 'Visitas', PREVENTA: 'Preventa',
   BUSQUEDA_ACTIVA: 'Búsqueda activa', NEGOCIACION: 'Negociación', ACUERDO_INTERESADO: 'Propuesta/Señal',
   ARRAS: 'Arras', HIPOTECA: 'Hipoteca', NOTARIA: 'Notaría', CIERRE: 'Cierre', POSVENTA: 'Posventa',
-  CERRADO: 'Finalizado', CANCELADO: 'Cancelado',
-  // Nuevos
+  // Estados especiales
+  CERRADO: 'Finalizado', CANCELADO: 'Cancelado', BLOQUEADO: 'Bloqueado',
+  // VENTA - Captación
   CAPTACION_INMUEBLE: 'Captación inmueble', VALORACION_MERCADO: 'Valoración mercado',
   MANDATO_EXCLUSIVA: 'Mandato/Exclusiva', DOCUMENTACION_LEGAL: 'Doc. legal',
   PREPARACION_MARKETING: 'Prep. marketing', PUBLICACION_ACTIVO: 'Publicación',
+  // VENTA - Comprador
   CAPTACION_COMPRADOR: 'Captación comprador', GESTION_VISITAS: 'Gestión visitas',
   NEGOCIACION_PRECIO: 'Negociación precio', RESERVA_SENAL: 'Reserva/Señal',
   ARRAS_PRIVADO: 'Arras', GESTION_HIPOTECA: 'Hipoteca',
   PREPARACION_NOTARIA: 'Prep. notaría', FIRMA_ESCRITURA: 'Firma escritura',
   CIERRE_REGISTRO: 'Cierre/Registro', POSTVENTA_SEGUIMIENTO: 'Postventa',
+  // ALQUILER - Propietario
   CAPTACION_PROPIEDAD: 'Captación propiedad', VALORACION_RENTA: 'Valoración renta',
   MANDATO_ALQUILER: 'Mandato alquiler', DOCUMENTACION_INMUEBLE: 'Doc. inmueble',
   MARKETING_DIFUSION: 'Marketing/Difusión', GESTION_VISITAS_ALQ: 'Visitas',
+  // ALQUILER - Inquilino
   CAPTACION_INQUILINO: 'Captación inquilino', PRESENTACION_INMUEBLES: 'Presentación',
   DOCUMENTACION_SOLVENCIA: 'Doc. solvencia', VALIDACION_ECONOMICA: 'Validación económica',
   NEGOCIACION_CONDICIONES: 'Negociación', CONTRATO_ALQUILER: 'Contrato alquiler',
   ENTREGA_INMUEBLE: 'Entrega inmueble', GESTION_MENSUAL: 'Gestión mensual',
+  // INVERSIÓN
+  PERFILADO_INVERSOR: 'Perfilado inversor', KYC_SOLVENCIA: 'KYC solvencia',
+  BUSQUEDA_ACTIVOS: 'Búsqueda activos', ANALISIS_FINANCIERO: 'Análisis financiero',
+  DUE_DILIGENCE: 'Due diligence', NEGOCIACION_INV: 'Negociación',
+  RESERVA_ACTIVO: 'Reserva activo', ARRAS_INVERSION: 'Arras inversión',
+  FINANCIACION_INV: 'Financiación', CIERRE_COMPRA: 'Cierre compra',
+  GESTION_POST_COMPRA: 'Gestión post-compra',
 }
 
 function getPhaseLabel(phase) {

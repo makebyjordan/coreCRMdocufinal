@@ -67,31 +67,49 @@ async function generateForPhase(expedientId, phase, operationType, operationSize
  * Verifica si todos los checklists obligatorios de una fase están completos.
  */
 async function isPhaseComplete(expedientId, phase) {
-  let instances = await prisma.checklistInstance.findMany({
+  // Buscar TODAS las instancias de esta fase (completadas y activas)
+  const allInstances = await prisma.checklistInstance.findMany({
     where: { expedientId, phase },
     include: { items: true },
   });
 
-  // Si no hay instancias, intentamos generarlas ahora (recuperación proactiva)
-  if (instances.length === 0) {
+  // Si no hay instancias en absoluto, intentar generarlas
+  if (allInstances.length === 0) {
     const exp = await prisma.expedient.findUnique({ where: { id: expedientId } });
     if (exp && !['CERRADO', 'CANCELADO', 'POSVENTA'].includes(phase)) {
-      instances = await generateForPhase(exp.id, phase, exp.operationType, exp.operationSize);
+      await generateForPhase(exp.id, phase, exp.operationType, exp.operationSize);
+      // Recargar instancias recién creadas
+      const newInstances = await prisma.checklistInstance.findMany({
+        where: { expedientId, phase },
+        include: { items: true },
+      });
+      // Verificar que las nuevas instancias estén completas
+      for (const instance of newInstances) {
+        const requiredItems = instance.items.filter(i => i.required);
+        const allDone = requiredItems.every(i => i.completed);
+        if (!allDone) return false;
+      }
+      return true;
     }
-  }
-
-  if (instances.length === 0) {
-    // Si después de intentar generar sigue sin haber nada en fases críticas, bloqueamos.
+    // Sin instancias en fases finales = OK
     if (['CERRADO', 'CANCELADO'].includes(phase)) return true;
-    return false; 
+    return false;
   }
 
-  for (const instance of instances) {
-    const requiredItems = instance.items.filter(i => i.required);
-    const allDone = requiredItems.every(i => i.completed);
-    if (!allDone) return false;
+  // Filtrar solo instancias activas (no completadas) para verificar
+  const activeInstances = allInstances.filter(i => i.completedAt === null);
+  
+  // Si hay instancias activas, verificar que estén completas
+  if (activeInstances.length > 0) {
+    for (const instance of activeInstances) {
+      const requiredItems = instance.items.filter(i => i.required);
+      const allDone = requiredItems.every(i => i.completed);
+      if (!allDone) return false;
+    }
+    return true;
   }
 
+  // Si no hay instancias activas pero sí completadas, la fase está completa
   return true;
 }
 

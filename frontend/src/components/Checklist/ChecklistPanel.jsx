@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import api from '../../api/client'
 import { CheckCircle, Circle, ChevronDown, ChevronRight, RefreshCw, Layers } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 // Human-readable phase labels (mirrors backend enum keys)
 const PHASE_LABELS = {
@@ -141,6 +141,13 @@ export default function ChecklistPanel({ expedientId }) {
 function ChecklistInstance({ instance, onToggle }) {
   const [expanded, setExpanded] = useState(true)
   const { progress } = instance
+
+  // Colapsar automáticamente cuando se completa o cambia la instancia
+  useEffect(() => {
+    if (instance.completedAt) {
+      setExpanded(false)
+    }
+  }, [instance.id, instance.completedAt])
 
   return (
     <div className={`card overflow-hidden border-l-4 transition-all ${

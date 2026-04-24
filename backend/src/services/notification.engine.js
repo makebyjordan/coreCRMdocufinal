@@ -503,4 +503,5 @@ module.exports = {
   sendPostventa3,
   sendPostventa6,
   sendPostventa12,
+  send: sendNotification, // Export for workflow engine
 };

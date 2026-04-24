@@ -212,7 +212,10 @@ function ClientModal({ client, onClose, onSaved }) {
       ? api.put(`/clients/${client.id}`, data)
       : api.post('/clients', data),
     onSuccess: () => { toast.success(client ? 'Cliente actualizado' : 'Cliente creado'); onSaved() },
-    onError: (err) => toast.error(err.response?.data?.error || 'Error'),
+    onError: (err) => {
+      const msg = err.response?.data?.error || err.response?.data?.message || err.message || 'Error al guardar'
+      toast.error(msg)
+    },
   })
 
   return (

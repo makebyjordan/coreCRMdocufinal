@@ -236,6 +236,7 @@ El sistema envía emails automáticos en los siguientes eventos:
 ### Ver registro de notificaciones
 
 Abre cualquier expediente → pestaña **"Notificaciones"**.  
+Para consultar el historial completo del cliente asociado a un expediente, usa el enlace **"Ver ficha completa del cliente →"** en el header del expediente.  
 Verás el historial completo con estado (Enviado, Pendiente, Fallido) y la opción de **reenviar** los que fallaron.
 
 ### Personalizar plantillas
@@ -290,7 +291,36 @@ La vista de lista permite ver todos los expedientes en formato tabla con ordenac
 
 ---
 
-## 10. Preguntas frecuentes
+## 10. Clientes — Ficha central del cliente
+
+Cada cliente dispone de una ficha completa accesible desde **Clientes** → nombre del cliente.
+
+### Pestañas disponibles
+
+| Pestaña | Contenido |
+|---------|-----------|
+| **Resumen** | Información de contacto, KPIs de expedientes (total, activos, completados, cancelados, bloqueados), contadores de recursos y última actividad |
+| **Actividad** | Timeline cronológico de todas las acciones registradas |
+| **Notas** | Notas estructuradas del equipo |
+| **Tareas** | Tareas pendientes y completadas asociadas al cliente |
+| **Documentos** | Biblioteca unificada de todos los documentos del cliente |
+| **Comunicaciones** | Registro de emails, llamadas y mensajes |
+| **Relaciones** | Vínculos con otros clientes (familiar, referido, etc.) |
+| **Historial** | Recorrido completo de operaciones: todos los expedientes con su línea temporal de fases, KPIs de comisiones y estado actual |
+
+### Historial del cliente
+
+La pestaña **Historial** centraliza el recorrido completo de operaciones del cliente:
+
+- **Timeline de expedientes**: cada operación con su código, tipo, dirección, precio y progresión de fases
+- **KPIs agregados**: total de expedientes, activos y completados, valor estimado en comisiones
+- Los expedientes enlazan directamente a su ficha detallada
+
+Desde cualquier expediente puedes acceder a la ficha del cliente mediante el enlace **"Ver ficha completa del cliente →"** situado bajo el código del expediente en el header.
+
+---
+
+## 11. Preguntas frecuentes
 
 **¿Por qué no puedo avanzar de fase?**  
 El sistema bloquea el avance si hay ítems obligatorios del checklist sin completar. Ve a la pestaña "Checklist" y completa todos los ítems marcados como *obligatorio.
