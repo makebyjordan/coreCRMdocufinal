@@ -1,5 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const activityFeed = require('../services/activity-feed.service');
+const lifecycleService = require('../services/client-lifecycle.service');
 
 async function listByExpedient(req, res) {
   const { expedientId } = req.params;
@@ -64,7 +66,27 @@ async function create(req, res) {
     
     return updatedVisit;
   });
-  
+
+  // ─── ACTIVITY FEED + LIFECYCLE (post-commit, silencioso) ─────────────
+  try {
+    activityFeed.recordActivity({
+      type: activityFeed.ACTIVITY_TYPES.VISIT_CREATED,
+      title: `Visita registrada: ${visitorName}`,
+      description: `Interés: ${interestLevel || 'MEDIO'}${feedback ? ` - ${feedback.substring(0, 100)}` : ''}`,
+      clientId: expedient.clientId,
+      expedientId,
+      userId: req.user?.id,
+      relatedEntityType: 'Visit',
+      relatedEntityId: result.id,
+      metadata: { visitorName, interestLevel, date: visitDate },
+    }).catch(() => {});
+
+    // Si la visita tiene interés HIGH, recalcular score
+    if (interestLevel === 'HIGH') {
+      lifecycleService.recalculateScore(expedient.clientId).catch(() => {});
+    }
+  } catch (_) {}
+
   res.status(201).json(result);
 }
 

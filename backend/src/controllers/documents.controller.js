@@ -5,6 +5,7 @@ const fs = require('fs');
 const mammoth = require('mammoth');
 const driveService = require('../services/drive.service');
 const notificationEngine = require('../services/notification.engine');
+const activityFeed = require('../services/activity-feed.service');
 const logger = require('../config/logger');
 
 async function listByExpedient(req, res) {
@@ -57,6 +58,7 @@ async function upload(req, res) {
     const doc = await prisma.document.create({
       data: {
         expedientId,
+        ownerClientId: expedient.clientId, // Vincular al cliente del expediente
         uploadedById: req.user.id,
         name: name || req.file.originalname,
         docType: docType || 'OTRO',
@@ -71,6 +73,21 @@ async function upload(req, res) {
       include: { uploadedBy: { select: { name: true, role: true } } },
     });
 
+    // ─── ACTIVITY FEED (post-commit, silencioso) ─────────────
+    try {
+      activityFeed.recordActivity({
+        type: activityFeed.ACTIVITY_TYPES.DOC_UPLOADED,
+        title: `Documento subido: ${doc.name}`,
+        description: `Tipo: ${doc.docType}, Fase: ${doc.phase}`,
+        clientId: expedient.clientId,
+        expedientId,
+        userId: req.user?.id,
+        relatedEntityType: 'Document',
+        relatedEntityId: doc.id,
+        metadata: { docType, phase: doc.phase, fileSize: req.file.size },
+      }).catch(() => {});
+    } catch (_) {}
+
     res.status(201).json(doc);
   } catch (err) {
     logger.error('[Documents] Error al subir:', err.message);
@@ -81,10 +98,36 @@ async function upload(req, res) {
 async function validate(req, res) {
   try {
     const { notes } = req.body;
+
+    // Obtener documento antes de actualizar para tener contexto
+    const existing = await prisma.document.findUnique({
+      where: { id: req.params.id },
+      include: { expedient: { select: { id: true, code: true, clientId: true } } },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Documento no encontrado' });
+    }
+
     const doc = await prisma.document.update({
       where: { id: req.params.id },
       data: { status: 'VALIDADO', notes, validatedAt: new Date() },
     });
+
+    // ─── ACTIVITY FEED (post-commit, silencioso) ─────────────
+    try {
+      activityFeed.recordActivity({
+        type: activityFeed.ACTIVITY_TYPES.DOC_VALIDATED,
+        title: `Documento validado: ${existing.name}`,
+        description: notes,
+        clientId: existing.expedient?.clientId,
+        expedientId: existing.expedientId,
+        userId: req.user?.id,
+        relatedEntityType: 'Document',
+        relatedEntityId: doc.id,
+      }).catch(() => {});
+    } catch (_) {}
+
     res.json(doc);
   } catch (err) {
     logger.error('[Documents] Error al validar:', err.message);
@@ -95,11 +138,39 @@ async function validate(req, res) {
 async function reject(req, res) {
   try {
     const { rejectedReason } = req.body;
+
+    // Obtener documento antes de actualizar
+    const existing = await prisma.document.findUnique({
+      where: { id: req.params.id },
+      include: { expedient: { select: { id: true, code: true, clientId: true } } },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Documento no encontrado' });
+    }
+
     const doc = await prisma.document.update({
       where: { id: req.params.id },
       data: { status: 'RECHAZADO', rejectedReason },
     });
+
     await notificationEngine.onDocumentRejected(doc.expedientId, doc.name, rejectedReason);
+
+    // ─── ACTIVITY FEED (post-commit, silencioso) ─────────────
+    try {
+      activityFeed.recordActivity({
+        type: activityFeed.ACTIVITY_TYPES.DOC_REJECTED,
+        title: `Documento rechazado: ${existing.name}`,
+        description: rejectedReason,
+        clientId: existing.expedient?.clientId,
+        expedientId: existing.expedientId,
+        userId: req.user?.id,
+        relatedEntityType: 'Document',
+        relatedEntityId: doc.id,
+        metadata: { rejectedReason },
+      }).catch(() => {});
+    } catch (_) {}
+
     res.json(doc);
   } catch (err) {
     logger.error('[Documents] Error al rechazar:', err.message);

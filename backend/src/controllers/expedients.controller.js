@@ -5,6 +5,8 @@ const checklistGenerator = require('../services/checklist.generator');
 const driveService = require('../services/drive.service');
 const notificationEngine = require('../services/notification.engine');
 const calendarSync = require('../services/calendar-sync.service');
+const activityFeed = require('../services/activity-feed.service');
+const lifecycleService = require('../services/client-lifecycle.service');
 const logger = require('../config/logger');
 
 // ─── Generar código de expediente ─────────────────────────────────────────────
@@ -201,6 +203,25 @@ async function create(req, res) {
     include: { client: true, assignments: { include: { user: true } } },
   });
 
+  // ─── ACTIVITY FEED + LIFECYCLE (post-commit, silencioso) ─────────────
+  try {
+    activityFeed.recordActivity({
+      type: activityFeed.ACTIVITY_TYPES.EXPEDIENT_CREATED,
+      title: `Expediente creado: ${full.code}`,
+      description: `Tipo: ${operationType}`,
+      clientId: full.clientId,
+      expedientId: expedient.id,
+      userId: req.user?.id,
+      relatedEntityType: 'Expedient',
+      relatedEntityId: expedient.id,
+    }).catch(() => {});
+
+    // Recalcular lifecycle del cliente (puede pasar a PROSPECTO)
+    lifecycleService.recalculateLifecycle(full.clientId).catch(() => {});
+  } catch (_) {
+    // Nunca debe bloquear la operación
+  }
+
   res.status(201).json(full);
 }
 
@@ -276,6 +297,22 @@ async function advancePhase(req, res) {
 
   if (result.error) return res.status(400).json({ error: result.error });
 
+  // ─── ACTIVITY FEED + LIFECYCLE (post-commit, silencioso) ─────────────
+  try {
+    activityFeed.recordActivity({
+      type: activityFeed.ACTIVITY_TYPES.EXPEDIENT_PHASE_CHANGED,
+      title: `Fase cambiada: ${result.fromPhase} → ${result.toPhase}`,
+      clientId: expedient.clientId,
+      expedientId: expedient.id,
+      userId: req.user?.id,
+      metadata: { fromPhase: result.fromPhase, toPhase: result.toPhase },
+    }).catch(() => {});
+
+    // Recalcular score (la actividad de cambio de fase puede afectar score)
+    lifecycleService.recalculateScore(expedient.clientId).catch(() => {});
+    lifecycleService.recalculateLifecycle(expedient.clientId).catch(() => {});
+  } catch (_) {}
+
   res.json(result);
 }
 
@@ -318,6 +355,23 @@ async function closeExpedient(req, res) {
   });
 
   await notificationEngine.onOperacionCerrada(expedient.id);
+
+  // ─── ACTIVITY FEED + LIFECYCLE (post-commit, silencioso) ─────────────
+  try {
+    activityFeed.recordActivity({
+      type: activityFeed.ACTIVITY_TYPES.EXPEDIENT_CLOSED,
+      title: `Expediente cerrado: ${expedient.code}`,
+      description: 'Operación completada exitosamente',
+      clientId: expedient.clientId,
+      expedientId: expedient.id,
+      userId: req.user?.id,
+      relatedEntityType: 'Expedient',
+      relatedEntityId: expedient.id,
+    }).catch(() => {});
+
+    lifecycleService.recalculateLifecycle(expedient.clientId).catch(() => {});
+  } catch (_) {}
+
   res.json(expedient);
 }
 

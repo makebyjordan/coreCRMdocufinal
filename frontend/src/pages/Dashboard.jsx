@@ -9,6 +9,8 @@ import { format, parseISO, isPast, formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import api from '../api/client'
+import ClientAnalyticsWidget from '../components/Dashboard/ClientAnalyticsWidget'
+import TasksWidget from '../components/Dashboard/TasksWidget'
 
 const PHASE_LABELS = {
   CAPTACION: 'Captación', FORMULARIO: 'Formulario', DOCUMENTACION: 'Documentación',
@@ -185,6 +187,12 @@ export default function DashboardPage() {
             <p className="text-gray-400 text-sm text-center py-10">Sin datos</p>
           )}
         </div>
+      </div>
+
+      {/* Client 360 Widgets */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <ClientAnalyticsWidget />
+        <TasksWidget />
       </div>
 
       {/* Alertas */}

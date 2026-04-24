@@ -103,36 +103,59 @@ model User {
   calendarEvents       CalendarEvent[]
   documentValidations  DocumentValidation[]
   expedientLinks       ExpedientLink[]
+  clientNotes          ClientNote[]
+  clientCommunications ClientCommunication[]
+  tasksAssigned        Task[]           @relation("AssignedTasks")
+  tasksCreated         Task[]           @relation("CreatedTasks")
+  activityEvents       ActivityEvent[]
+  documentExpedientLinks DocumentExpedientLink[]
+  clientRelationsLinked ClientRelation[] @relation("LinkedBy")
 
   @@map("users")
 }
 
 model Client {
-  id            String     @id @default(cuid())
-  type          ClientType
-  firstName     String?
-  lastName      String?
-  dni           String?
-  companyName   String?
-  nif           String?
-  contactPerson String?
-  email         String
-  phone         String
-  phone2        String?
-  address       String?
-  city          String?
-  postalCode    String?
-  province      String?
-  privacyPolicy Boolean    @default(false)
-  privacyDate   DateTime?
-  notes         String?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  id                String     @id @default(cuid())
+  type              ClientType
+  firstName         String?
+  lastName          String?
+  dni               String?    @unique
+  companyName       String?
+  nif               String?
+  contactPerson     String?
+  email             String
+  phone             String
+  phone2            String?
+  address           String?
+  city              String?
+  postalCode        String?
+  province          String?
+  privacyPolicy     Boolean    @default(false)
+  privacyDate       DateTime?
+  notes             String?
+  active            Boolean    @default(true)
+  firstContactDate  DateTime   @default(now())
+  lastContactDate   DateTime?
+  source            String?    // IDEALISTA | WEB | RECOMENDACION | COLD_CALL | REFERIDO | OTROS
+  score             String     @default("FRIO") // FRIO | TIBIO | CALIENTE | HOT
+  lifecycleStage    String     @default("LEAD") // LEAD | PROSPECTO | ACTIVO | RECURRENTE | PERDIDO
+  tags              String[]   @default([])
+  birthDate         DateTime?
+  preferences       Json?      // { budgetMin, budgetMax, zones: [], rooms, m2Min, operationTypes: [] }
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
 
-  expedients     Expedient[]
-  roles          ExpedientClient[]
-  calendarEvents CalendarEvent[]
-  journey        ClientJourney?
+  expedients        Expedient[]
+  roles             ExpedientClient[]
+  calendarEvents    CalendarEvent[]
+  journey           ClientJourney?
+  notesStructured   ClientNote[]
+  tasks             Task[]
+  communications    ClientCommunication[]
+  activityEvents    ActivityEvent[]
+  ownedDocuments    Document[]       @relation("ClientDocuments")
+  relationsA        ClientRelation[] @relation("ClientRelationsA")
+  relationsB        ClientRelation[] @relation("ClientRelationsB")
 
   @@map("clients")
 }
@@ -221,6 +244,10 @@ model Expedient {
   buyers         Buyer[]
   visits         Visit[]
   calendarEvents CalendarEvent[]
+  tasks          Task[]
+  communications ClientCommunication[]
+  activityEvents ActivityEvent[]
+  documentExpedientLinks DocumentExpedientLink[]
 
   // Jerarquía simple (captación padre / venta hijo)
   parentExpedient Expedient?  @relation("ExpedientHierarchy", fields: [parentExpedientId], references: [id])
@@ -417,6 +444,7 @@ model ChecklistInstanceItem {
 model Document {
   id             String         @id @default(cuid())
   expedientId    String
+  ownerClientId  String?
   uploadedById   String?
   name           String
   docType        String
@@ -434,9 +462,11 @@ model Document {
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
-  expedient   Expedient            @relation(fields: [expedientId], references: [id], onDelete: Cascade)
-  uploadedBy  User?                @relation(fields: [uploadedById], references: [id])
-  validations DocumentValidation[]
+  expedient     Expedient            @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  ownerClient   Client?              @relation("ClientDocuments", fields: [ownerClientId], references: [id], onDelete: SetNull)
+  uploadedBy    User?                @relation(fields: [uploadedById], references: [id])
+  validations   DocumentValidation[]
+  expedientLinks DocumentExpedientLink[]
 
   @@map("documents")
 }
@@ -507,6 +537,7 @@ model CalendarEvent {
   expedientId String?
   visitId     String?  @unique
   signatureId String?  @unique
+  taskId      String?  @unique
   completed   Boolean  @default(false)
   createdById String?
   createdAt   DateTime @default(now())
@@ -516,6 +547,7 @@ model CalendarEvent {
   expedient Expedient? @relation(fields: [expedientId], references: [id], onDelete: SetNull)
   visit     Visit?     @relation
   signature Signature? @relation
+  task      Task?      @relation(fields: [taskId], references: [id])
   createdBy User?      @relation(fields: [createdById], references: [id])
 
   @@map("calendar_events")
@@ -558,4 +590,172 @@ model BaseDocument {
   updatedAt   DateTime @updatedAt
 
   @@map("base_documents")
+}
+
+// ─── Modelos FASE 1: Cliente 360 ─────────────────────────────────────────────
+
+model ClientNote {
+  id        String   @id @default(cuid())
+  clientId  String
+  authorId  String
+  content   String
+  pinned    Boolean  @default(false)
+  mentions  String[] @default([])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  author User   @relation(fields: [authorId], references: [id])
+
+  @@map("client_notes")
+}
+
+model ClientCommunication {
+  id          String   @id @default(cuid())
+  clientId    String
+  expedientId String?
+  channel     String   // EMAIL | PHONE | WHATSAPP | SMS | MEETING
+  direction   String   @default("OUTBOUND") // OUTBOUND | INBOUND
+  subject     String?
+  body        String?
+  templateId  String?
+  sentById    String?
+  sentAt      DateTime @default(now())
+  status      String   @default("SENT") // SENT | DELIVERED | OPENED | FAILED | PENDING
+  externalId  String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  client    Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  expedient Expedient? @relation(fields: [expedientId], references: [id], onDelete: SetNull)
+  sentBy    User?      @relation(fields: [sentById], references: [id])
+
+  @@map("client_communications")
+}
+
+model Task {
+  id              String    @id @default(cuid())
+  title           String
+  description     String?
+  clientId        String?
+  expedientId     String?
+  assignedToId    String?
+  createdById     String?
+  dueDate         DateTime?
+  completedAt     DateTime?
+  priority        String    @default("MEDIUM") // LOW | MEDIUM | HIGH
+  type            String    @default("OTRA") // LLAMAR | EMAIL | VISITA | REVISAR_DOC | FIRMAR | OTRA
+  calendarEventId String?   @unique
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  client        Client?       @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  expedient     Expedient?    @relation(fields: [expedientId], references: [id], onDelete: SetNull)
+  assignedTo    User?         @relation("AssignedTasks", fields: [assignedToId], references: [id])
+  createdBy     User?         @relation("CreatedTasks", fields: [createdById], references: [id])
+  calendarEvent CalendarEvent? @relation()
+
+  @@map("tasks")
+}
+
+model ActivityEvent {
+  id               String   @id @default(cuid())
+  clientId         String?
+  expedientId      String?
+  userId           String?
+  type             String   // CLIENT_CREATED, CLIENT_UPDATED, EXPEDIENT_CREATED, etc.
+  title            String
+  description      String?
+  metadata         Json?
+  relatedEntityType String?
+  relatedEntityId  String?
+  createdAt        DateTime @default(now())
+
+  client    Client?    @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  expedient Expedient? @relation(fields: [expedientId], references: [id], onDelete: SetNull)
+  user      User?      @relation(fields: [userId], references: [id])
+
+  @@index([clientId, createdAt(sort: Desc)])
+  @@index([expedientId, createdAt(sort: Desc)])
+  @@index([type, createdAt(sort: Desc)])
+  @@map("activity_events")
+}
+
+model ClientRelation {
+  id        String   @id @default(cuid())
+  clientAId String
+  clientBId String
+  linkedById String?
+  type      String   // FAMILIAR | AMIGO | SOCIA | REFERIDO_POR | REFIERE_A | OTRO
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clientA Client @relation("ClientRelationsA", fields: [clientAId], references: [id], onDelete: Cascade)
+  clientB Client @relation("ClientRelationsB", fields: [clientBId], references: [id], onDelete: Cascade)
+  linkedBy User?  @relation("LinkedBy", fields: [linkedById], references: [id])
+
+  @@unique([clientAId, clientBId, type])
+  @@map("client_relations")
+}
+
+model DocumentExpedientLink {
+  id          String   @id @default(cuid())
+  documentId  String
+  expedientId String
+  linkedAt    DateTime @default(now())
+  linkedById  String?
+
+  document Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  expedient Expedient @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  linkedBy  User?     @relation(fields: [linkedById], references: [id])
+
+  @@unique([documentId, expedientId])
+  @@map("document_expedient_links")
+}
+
+model WorkflowRule {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  active      Boolean  @default(true)
+  
+  // Condiciones (trigger)
+  triggerEvent String   // CLIENT_SCORE_CHANGED | CLIENT_STAGE_CHANGED | DAYS_SINCE_CONTACT | TASK_OVERDUE
+  conditions   Json?    // { score: "HOT", fromScore: "CALIENTE" } | { stage: "ACTIVO" } | { days: 7 }
+  
+  // Acciones
+  actions      Json     // [{ type: "CREATE_TASK", config: {...} }, { type: "SEND_NOTIFICATION", ... }]
+  
+  // Metadatos
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  lastRunAt   DateTime?
+  runCount    Int      @default(0)
+  
+  createdBy User? @relation(fields: [createdById], references: [id])
+  
+  @@index([triggerEvent, active])
+  @@map("workflow_rules")
+}
+
+model WorkflowExecution {
+  id          String   @id @default(cuid())
+  ruleId      String
+  clientId    String?
+  expedientId String?
+  status      String   @default("PENDING") // PENDING | RUNNING | COMPLETED | FAILED
+  input       Json?    // Datos que dispararon el workflow
+  output      Json?    // Resultado de las acciones
+  error       String?
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
+  
+  rule WorkflowRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  
+  @@index([ruleId, status])
+  @@index([clientId, createdAt])
+  @@map("workflow_executions")
 }

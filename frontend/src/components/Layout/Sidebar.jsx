@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, FolderKanban, Users, Settings,
   Building2, UserCog, CalendarDays, FileText,
+  // FASE 4 - Pendiente: Workflow,
 } from 'lucide-react'
 import useAuthStore from '../../store/authStore'
 
@@ -10,6 +11,8 @@ const navItems = [
   { to: '/clients', icon: Users, label: 'Clientes' },
   { to: '/expedients', icon: FolderKanban, label: 'Expedientes' },
   { to: '/documents', icon: FileText, label: 'Documentos' },
+  // FASE 4 - Pendiente de activar: Automatizaciones/Workflows. Reactivar cuando estén las tablas workflow_rules en Supabase.
+  // { to: '/workflows', icon: Workflow, label: 'Automatizaciones', roles: ['DIRECCION', 'ADMINISTRACION'] },
   { to: '/users', icon: UserCog, label: 'Usuarios', roles: ['DIRECCION', 'ADMINISTRACION'] },
   { to: '/settings', icon: Settings, label: 'Configuración', roles: ['DIRECCION', 'ADMINISTRACION'] },
 ]

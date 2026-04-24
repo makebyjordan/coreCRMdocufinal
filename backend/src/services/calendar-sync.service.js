@@ -250,13 +250,124 @@ async function updateSignatureStatus(signatureId, newStatus, additionalData = {}
   });
 }
 
+/**
+ * Build CalendarEvent data from a Task
+ * @param {Object} task - Task object with related data
+ * @returns {Object} CalendarEvent data
+ */
+function buildCalendarEventFromTask(task) {
+  const isCompleted = !!task.completedAt;
+  const typeLabels = {
+    LLAMAR: 'Llamada',
+    EMAIL: 'Email',
+    VISITA: 'Visita',
+    REVISAR_DOC: 'Revisar Doc',
+    FIRMAR: 'Firma',
+    OTRA: 'Tarea',
+  };
+
+  const priorityEmoji = {
+    HIGH: '🔴',
+    MEDIUM: '🟡',
+    LOW: '🟢',
+  };
+
+  const typeLabel = typeLabels[task.type] || 'Tarea';
+  const emoji = priorityEmoji[task.priority] || '🟡';
+
+  const title = `${emoji} ${typeLabel}: ${task.title}`;
+
+  // Fechas
+  const startAt = task.dueDate || new Date();
+  const endAt = new Date(new Date(startAt).getTime() + 60 * 60 * 1000); // +1 hora
+
+  const notes = [
+    task.description,
+    task.expedient ? `Expediente: ${task.expedient.code}` : null,
+    task.assignedTo ? `Asignado a: ${task.assignedTo.name}` : null,
+    `Prioridad: ${task.priority}`,
+    `Tipo: ${task.type}`,
+  ].filter(Boolean).join('\n');
+
+  return {
+    title,
+    type: 'TASK',
+    startAt,
+    endAt,
+    allDay: false,
+    notes,
+    clientId: task.clientId || task.expedient?.clientId || null,
+    expedientId: task.expedientId,
+    completed: isCompleted,
+  };
+}
+
+/**
+ * Sync a Task with CalendarEvent (create or update)
+ * @param {Object} task - Task object
+ * @param {string} userId - User ID creating the event
+ * @returns {Promise<Object>} Updated task with calendarEvent
+ */
+async function syncTaskWithCalendar(task, userId) {
+  const eventData = buildCalendarEventFromTask(task);
+  eventData.createdById = userId;
+
+  return await prisma.$transaction(async (tx) => {
+    let calendarEvent;
+
+    if (task.calendarEventId) {
+      // Update existing event
+      calendarEvent = await tx.calendarEvent.update({
+        where: { id: task.calendarEventId },
+        data: eventData,
+      });
+    } else {
+      // Create new event
+      calendarEvent = await tx.calendarEvent.create({
+        data: { ...eventData, taskId: task.id },
+      });
+
+      // Update task with calendarEventId
+      await tx.task.update({
+        where: { id: task.id },
+        data: { calendarEventId: calendarEvent.id },
+      });
+    }
+
+    return { ...task, calendarEvent };
+  });
+}
+
+/**
+ * Delete CalendarEvent associated with a Task
+ * @param {string} taskId - Task ID
+ * @returns {Promise<void>}
+ */
+async function deleteTaskCalendarEvent(taskId) {
+  await prisma.$transaction(async (tx) => {
+    const task = await tx.task.findUnique({
+      where: { id: taskId },
+      select: { calendarEventId: true },
+    });
+
+    if (task?.calendarEventId) {
+      await tx.calendarEvent.delete({
+        where: { id: task.calendarEventId },
+      });
+    }
+  });
+}
+
 module.exports = {
   buildCalendarEventFromVisit,
   buildCalendarEventFromSignature,
+  buildCalendarEventFromTask,
   getSignatureStatusColor,
   syncVisitWithCalendar,
   syncSignatureWithCalendar,
+  syncTaskWithCalendar,
   deleteVisitCalendarEvent,
   deleteSignatureCalendarEvent,
+  deleteTaskCalendarEvent,
   updateSignatureStatus,
 };
