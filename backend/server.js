@@ -80,8 +80,8 @@ async function main() {
     // Validar variables de entorno críticas antes de arrancar
     validateCriticalEnv();
 
-    // await prisma.$connect();
-    logger.info('Aviso: Conexión explícita a PostgreSQL desactivada temporalmente en el arranque.');
+    await prisma.$connect();
+    logger.info('[DB] Conexión a PostgreSQL establecida');
 
     app.listen(PORT, () => {
       logger.info(`Servidor CRM escuchando en http://localhost:${PORT}`);
