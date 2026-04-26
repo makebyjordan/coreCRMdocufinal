@@ -12,6 +12,7 @@ import SettingsPage from './pages/Settings'
 import UsersPage from './pages/Users'
 import CalendarPage from './pages/Calendar'
 import BaseDocumentsPage from './pages/BaseDocuments'
+import NotFoundPage from './pages/NotFound'
 // FASE 4 - Pendiente: import WorkflowsPage from './pages/Workflows'
 
 function PrivateRoute({ children }) {
@@ -38,7 +39,7 @@ export default function App() {
         {/* FASE 4 - Pendiente de activar: Automatizaciones/Workflows. Reactivar cuando estén las tablas workflow_rules en Supabase. */}
         {/* <Route path="workflows" element={<WorkflowsPage />} /> */}
       </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   )
 }
