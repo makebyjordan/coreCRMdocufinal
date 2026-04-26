@@ -1,5 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { prisma } = require('../config/db');
 const dniValidator = require('../utils/dni-validator');
 const activityFeed = require('../services/activity-feed.service');
 const lifecycleService = require('../services/client-lifecycle.service');

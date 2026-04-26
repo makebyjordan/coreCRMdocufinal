@@ -1,5 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { prisma } = require('../config/db');
 const path = require('path');
 const fs = require('fs');
 const mammoth = require('mammoth');
@@ -7,6 +6,7 @@ const driveService = require('../services/drive.service');
 const notificationEngine = require('../services/notification.engine');
 const activityFeed = require('../services/activity-feed.service');
 const logger = require('../config/logger');
+const templateEngine = require('../services/template-engine.service');
 
 async function listByExpedient(req, res) {
   try {
@@ -257,4 +257,85 @@ async function preview(req, res) {
   }
 }
 
-module.exports = { listByExpedient, upload, validate, reject, remove, download, preview };
+/**
+ * Generar documento desde plantilla
+ * POST /api/documents/expedient/:expedientId/generate-from-template
+ */
+async function generateFromTemplate(req, res) {
+  try {
+    const { expedientId } = req.params;
+    const { templateId, overrides, autoOpenEditor } = req.body;
+
+    if (!templateId) {
+      return res.status(400).json({ error: 'templateId es requerido' });
+    }
+
+    // Generar documento
+    const result = await templateEngine.generateDocument(
+      templateId,
+      expedientId,
+      overrides || {},
+      req.body.outputName
+    );
+
+    // Registrar actividad
+    try {
+      activityFeed.recordActivity({
+        type: 'TEMPLATE_GENERATED',
+        title: `Documento generado desde plantilla: ${result.document.name}`,
+        description: `Plantilla origen: ${templateId}`,
+        expedientId,
+        userId: req.user?.id,
+        relatedEntityType: 'Document',
+        relatedEntityId: result.document.id,
+      }).catch(() => {});
+    } catch (_) {}
+
+    res.status(201).json({
+      document: result.document,
+      context: result.context,
+      autoOpenEditor: autoOpenEditor !== false,
+    });
+  } catch (err) {
+    logger.error('[Documents] Error generando desde plantilla:', err);
+    res.status(500).json({ error: err.message || 'Error al generar documento' });
+  }
+}
+
+/**
+ * Actualizar contenido HTML del documento
+ * PUT /api/documents/:id/content
+ */
+async function updateContent(req, res) {
+  try {
+    const { id } = req.params;
+    const { contentHtml } = req.body;
+
+    const doc = await prisma.document.update({
+      where: { id },
+      data: { contentHtml },
+    });
+
+    res.json(doc);
+  } catch (err) {
+    logger.error('[Documents] Error actualizando contenido:', err);
+    res.status(500).json({ error: 'Error al actualizar contenido' });
+  }
+}
+
+/**
+ * Enviar documento a firma externa (placeholder)
+ * POST /api/documents/:id/send-to-sign
+ */
+async function sendToSign(req, res) {
+  return res.status(501).json({
+    error: 'NOT_IMPLEMENTED',
+    message: 'Firma digital pendiente de integración con un proveedor externo (DocuSign, Signaturit, Adobe Sign).',
+    documentId: req.params.id
+  });
+}
+
+module.exports = { 
+  listByExpedient, upload, validate, reject, remove, download, preview,
+  generateFromTemplate, updateContent, sendToSign,
+};

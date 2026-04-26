@@ -1,14 +1,23 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { prisma } = require('../config/db');
 const driveService = require('../services/drive.service');
 const fs = require('fs');
 const path = require('path');
 const mammoth = require('mammoth');
 const logger = require('../config/logger');
+const templateEngine = require('../services/template-engine.service');
 
 async function list(req, res) {
   try {
+    const { filter, category } = req.query;
+    
+    const where = {
+      ...(category && { category }),
+      ...(filter === 'templates' && { isTemplate: true }),
+      ...(filter === 'files' && { isTemplate: false }),
+    };
+    
     const docs = await prisma.baseDocument.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
     });
     res.json(docs);
@@ -21,7 +30,7 @@ async function list(req, res) {
 async function upload(req, res) {
   try {
     if (!req.file) return res.status(400).json({ error: 'No se ha subido ningún archivo' });
-    const { name, category } = req.body;
+    const { name, category, isTemplate, requiresSignature } = req.body;
 
     let driveData = null;
     const rootFolderId = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
@@ -48,8 +57,31 @@ async function upload(req, res) {
         localPath: req.file.path,
         mimeType: req.file.mimetype,
         fileSize: req.file.size,
+        isTemplate: isTemplate === 'true' || isTemplate === true,
+        requiresSignature: requiresSignature === 'true' || requiresSignature === true,
       },
     });
+
+    // Si es plantilla, detectar placeholders automáticamente
+    let placeholders = [];
+    if (doc.isTemplate && req.file.mimetype?.includes('officedocument')) {
+      try {
+        placeholders = await templateEngine.detectPlaceholders(req.file.path);
+        
+        // Actualizar documento con placeholders detectados
+        await prisma.baseDocument.update({
+          where: { id: doc.id },
+          data: {
+            templateFormat: 'DOCX',
+            placeholders: JSON.stringify(placeholders),
+          },
+        });
+        
+        doc.placeholders = placeholders;
+      } catch (detectErr) {
+        logger.warn('[BaseDocs] Error detecting placeholders:', detectErr.message);
+      }
+    }
 
     res.status(201).json(doc);
   } catch (err) {
@@ -181,17 +213,67 @@ async function preview(req, res) {
 
 async function update(req, res) {
   const { id } = req.params;
-  const { name, category } = req.body;
+  const { name, category, isTemplate, requiresSignature, placeholders, signerRoles } = req.body;
   try {
     const doc = await prisma.baseDocument.update({
       where: { id },
-      data: { name, category },
+      data: { 
+        name, 
+        category,
+        ...(isTemplate !== undefined && { isTemplate }),
+        ...(requiresSignature !== undefined && { requiresSignature }),
+        ...(placeholders && { placeholders: typeof placeholders === 'string' ? placeholders : JSON.stringify(placeholders) }),
+        ...(signerRoles && { signerRoles: typeof signerRoles === 'string' ? signerRoles : JSON.stringify(signerRoles) }),
+      },
     });
     res.json(doc);
   } catch (err) {
     logger.error('[BaseDocs] Error updating:', err);
     res.status(500).json({ error: 'Error al actualizar documento' });
   }
+}
+
+/**
+ * Detectar placeholders en un documento existente
+ * POST /api/base-documents/:id/detect-placeholders
+ */
+async function detectPlaceholders(req, res) {
+  try {
+    const { id } = req.params;
+    
+    const doc = await prisma.baseDocument.findUnique({ where: { id } });
+    if (!doc) return res.status(404).json({ error: 'Documento no encontrado' });
+    
+    if (!doc.localPath || !fs.existsSync(doc.localPath)) {
+      return res.status(404).json({ error: 'Archivo no disponible' });
+    }
+
+    const placeholders = await templateEngine.detectPlaceholders(doc.localPath);
+    
+    // Actualizar documento
+    await prisma.baseDocument.update({
+      where: { id },
+      data: {
+        isTemplate: true,
+        templateFormat: 'DOCX',
+        placeholders: JSON.stringify(placeholders),
+      },
+    });
+
+    res.json({ placeholders });
+  } catch (err) {
+    logger.error('[BaseDocs] Error detecting placeholders:', err);
+    res.status(500).json({ error: 'Error al detectar placeholders' });
+  }
+}
+
+/**
+ * Obtener lista de variables de plantilla disponibles
+ * GET /api/base-documents/template-variables
+ */
+async function getTemplateVariables(req, res) {
+  const { getAllVariables } = require('../constants/template-variables.constants');
+  res.json(getAllVariables());
 }
 
 async function remove(req, res) {
@@ -205,4 +287,7 @@ async function remove(req, res) {
   }
 }
 
-module.exports = { list, upload, download, preview, update, remove };
+module.exports = { 
+  list, upload, download, preview, update, remove, 
+  detectPlaceholders, getTemplateVariables 
+};

@@ -1,10 +1,9 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import {
-  Upload, FileText, CheckCircle, XCircle,
+import { Upload, FileText, CheckCircle, XCircle,
   Download, Trash2, ExternalLink, Info, AlertCircle, Eye, Plus,
-  History, Calendar,
+  History, Calendar, PenTool, X, Loader2,
 } from 'lucide-react'
 import api from '../../api/client'
 
@@ -133,7 +132,6 @@ const STATUS_CONFIG = {
 }
 
 // ─── Definición de documentos necesarios por flujo ────────────────────────────
-// ✨ MEJORADO - Incluye TODOS los documentos del sector inmobiliario real
 const REQUIRED_DOCS = {
   VENTA: [
     { type: 'DNI_NIE', label: 'DNI / NIE Vendedor', description: 'Documento vigente de todos los propietarios' },
@@ -236,7 +234,7 @@ const REQUIRED_DOCS = {
   ]
 }
 
-export default function DocumentPanel({ expedientId, currentPhase, operationType }) {
+export default function DocumentPanel({ expedientId, currentPhase, operationType, onRequestSign }) {
   const qc = useQueryClient()
   const fileRef = useRef()
   const [uploading, setUploading] = useState(false)
@@ -244,6 +242,7 @@ export default function DocumentPanel({ expedientId, currentPhase, operationType
   const [docName, setDocName] = useState('')
   const [selectedNeeded, setSelectedNeeded] = useState(null)
   const [expandedDoc, setExpandedDoc] = useState(null)
+  const [showGenerateModal, setShowGenerateModal] = useState(false)
 
   const { data: documents, isLoading: docLoading } = useQuery({
     queryKey: ['documents', expedientId],
@@ -258,13 +257,11 @@ export default function DocumentPanel({ expedientId, currentPhase, operationType
   const currentChecklist = checklists?.find(c => c.phase === currentPhase)
   const neededDocs = REQUIRED_DOCS[operationType] || []
 
-  // Mapeo de documentos subidos por tipo
   const uploadedTypes = (documents || []).reduce((acc, doc) => {
     acc[doc.docType] = true
     return acc
   }, {})
 
-  // Mapeo de ítems del checklist para ver cuáles ya están ahí
   const checklistLabels = (currentChecklist?.items || []).map(i => i.label.toLowerCase())
 
   const addItemToChecklist = useMutation({
@@ -280,7 +277,7 @@ export default function DocumentPanel({ expedientId, currentPhase, operationType
     if (!currentChecklist) return toast.error('No hay checklist activo en esta fase')
     const toAdd = neededDocs.filter(doc => !uploadedTypes[doc.type] && !checklistLabels.includes(doc.label.toLowerCase()))
     if (toAdd.length === 0) return toast.success('Ya están todos en el checklist')
-    
+
     Promise.all(toAdd.map(doc => addItemToChecklist.mutateAsync(doc.label)))
       .then(() => toast.success('Requisitos sincronizados'))
   }
@@ -293,7 +290,6 @@ export default function DocumentPanel({ expedientId, currentPhase, operationType
     const formData = new FormData()
     formData.append('file', file)
 
-    // Si venimos de un placeholder "Necesario", usamos ese tipo
     const finalType = selectedNeeded ? selectedNeeded.type : docType
     const finalName = selectedNeeded ? selectedNeeded.label : (docName || file.name)
 
@@ -334,7 +330,6 @@ export default function DocumentPanel({ expedientId, currentPhase, operationType
 
   if (docLoading || checkLoading) return <div className="text-gray-400 text-center py-10">Cargando documentos...</div>
 
-  // Documentos subidos agrupados
   const grouped = (documents || []).reduce((acc, doc) => {
     const key = doc.docType || 'OTRO'
     acc[key] = acc[key] || []
@@ -354,7 +349,7 @@ export default function DocumentPanel({ expedientId, currentPhase, operationType
               <h4 className="font-semibold text-[var(--text-main)] text-sm">Documentación Necesaria</h4>
             </div>
             {currentChecklist && (
-              <button 
+              <button
                 onClick={syncAllToChecklist}
                 className="text-[10px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors"
                 title="Añadir requisitos pendientes al checklist de esta fase"
@@ -387,7 +382,7 @@ export default function DocumentPanel({ expedientId, currentPhase, operationType
                     </div>
                     <div className="flex items-center gap-2">
                       {!isUploaded && !checklistLabels.includes(doc.label.toLowerCase()) && (
-                        <button 
+                        <button
                           onClick={() => addItemToChecklist.mutate(doc.label)}
                           className="p-1 hover:text-blue-600 text-gray-400 transition-colors"
                           title="Añadir tarea al checklist"
@@ -418,9 +413,18 @@ export default function DocumentPanel({ expedientId, currentPhase, operationType
       {/* Columna Derecha: Gestor de Archivos */}
       <div className="lg:col-span-2 space-y-4">
 
-        {/* Upload zone */}
+        {/* Upload zone + Descargar plantilla */}
         <div className="card p-5">
-          <h4 className="font-semibold mb-3 text-[var(--text-main)] text-sm">Subir otro documento</h4>
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="font-semibold text-[var(--text-main)] text-sm">Gestión de Documentos</h4>
+            <button
+              onClick={() => setShowGenerateModal(true)}
+              className="flex items-center gap-2 px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-medium hover:bg-purple-700 transition-colors"
+            >
+              <FileText size={14} />
+              Generar desde plantilla
+            </button>
+          </div>
           <div className="flex items-end gap-3 flex-wrap">
             <div className="flex-1 min-w-40">
               <label className="label text-xs">Nombre descriptivo</label>
@@ -455,7 +459,7 @@ export default function DocumentPanel({ expedientId, currentPhase, operationType
           </div>
         </div>
 
-        {/* Document list agrupado */}
+        {/* Listado de documentos agrupado */}
         <div className="space-y-3">
           {Object.entries(grouped).map(([type, docs]) => (
             <div key={type} className="card overflow-hidden">
@@ -490,6 +494,16 @@ export default function DocumentPanel({ expedientId, currentPhase, operationType
                           </div>
                         </div>
                         <div className="flex items-center gap-1">
+                          {/* Botón para solicitar firma — navega a la pestaña Firmas con este doc preseleccionado */}
+                          {onRequestSign && (
+                            <button
+                              onClick={() => onRequestSign(doc)}
+                              className="p-1.5 text-gray-400 hover:text-green-600 rounded-lg hover:bg-[var(--sidebar-bg)] transition-all"
+                              title="Enviar a firmar"
+                            >
+                              <PenTool size={15} />
+                            </button>
+                          )}
                           {/* Historial de validaciones */}
                           <button
                             onClick={() => setExpandedDoc(expandedDoc === doc.id ? null : doc.id)}
@@ -573,6 +587,87 @@ export default function DocumentPanel({ expedientId, currentPhase, operationType
               <FileText size={40} className="text-gray-200 mx-auto mb-3" />
               <p className="text-sm text-gray-400 font-medium">Gestor de archivos vacío</p>
               <p className="text-[10px] text-gray-300 mt-1">Usa la columna de la izquierda para subir la documentación necesaria</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Modal: Descargar plantilla */}
+      {showGenerateModal && (
+        <DownloadTemplateModal
+          onClose={() => setShowGenerateModal(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── Modal: Descargar Plantilla ───────────────────────────────────────────────
+function DownloadTemplateModal({ onClose }) {
+  const [templates, setTemplates] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    api.get('/base-documents', { params: { filter: 'templates' } })
+      .then(r => setTemplates(r.data))
+      .catch(() => toast.error('Error al cargar plantillas'))
+      .finally(() => setIsLoading(false))
+  }, [])
+
+  const handleDownload = (t) => {
+    const token = localStorage.getItem('crm_token')
+    window.open(`/api/base-documents/${t.id}/download?token=${token}`, '_blank')
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+      <div className="bg-[var(--card-bg)] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between p-5 border-b border-[var(--border-color)]">
+          <h3 className="font-bold text-lg text-[var(--text-main)]">Descargar plantilla</h3>
+          <button onClick={onClose} className="p-1 hover:bg-[var(--sidebar-bg)] rounded-full"><X size={20} /></button>
+        </div>
+
+        <div className="p-6 overflow-y-auto flex-1">
+          <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 mb-4">
+            <p className="text-sm text-blue-800">
+              Descarga la plantilla en blanco, complétala fuera de la aplicación, y súbela en la zona de la derecha cuando esté lista.
+            </p>
+          </div>
+
+          {isLoading && (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 size={24} className="animate-spin text-purple-600" />
+              <span className="ml-2 text-gray-600">Cargando plantillas...</span>
+            </div>
+          )}
+
+          {!isLoading && templates.length === 0 && (
+            <p className="text-gray-500 text-center py-8">No hay plantillas disponibles. Sube una en la sección Documentos Base.</p>
+          )}
+
+          {!isLoading && templates.length > 0 && (
+            <div className="space-y-3">
+              {templates.map(t => (
+                <div
+                  key={t.id}
+                  className="flex items-center gap-3 p-4 rounded-xl border border-[var(--border-color)] hover:border-purple-300 hover:bg-purple-50/5 transition-all"
+                >
+                  <div className="p-2 bg-purple-100 text-purple-600 rounded-lg shrink-0">
+                    <FileText size={20} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-medium text-[var(--text-main)] truncate">{t.name}</h4>
+                    <p className="text-xs text-gray-500">{t.category}</p>
+                  </div>
+                  <button
+                    onClick={() => handleDownload(t)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-medium hover:bg-purple-700 transition-colors shrink-0"
+                  >
+                    <Download size={13} />
+                    Descargar
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </div>

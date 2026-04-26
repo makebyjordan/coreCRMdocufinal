@@ -39,6 +39,8 @@ router.post('/:id/signatures', ctrl.createSignature);
 router.put('/:id/signatures/:signatureId', ctrl.updateSignature);
 router.patch('/:id/signatures/:signatureId/status', ctrl.updateSignatureStatus);
 router.delete('/:id/signatures/:signatureId', ctrl.deleteSignature);
+router.post('/:id/signatures/:signatureId/send-to-docusign', ctrl.sendSignatureToDocuSign);
+router.get('/:id/signatures/:signatureId/download-signed', ctrl.downloadSignedSignature);
 
 // Expedientes vinculados
 router.get('/:id/linked', ctrl.getLinkedExpedients);

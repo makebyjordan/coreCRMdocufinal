@@ -3,8 +3,7 @@
  * Red social entre clientes (relaciones familiares, referidos, etc.)
  */
 
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { prisma } = require('../config/db');
 
 // Tipos de relación válidos
 const VALID_TYPES = ['FAMILIAR', 'AMIGO', 'SOCIA', 'REFERIDO_POR', 'REFIERE_A', 'OTRO'];

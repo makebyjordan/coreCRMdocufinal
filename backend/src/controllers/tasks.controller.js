@@ -3,8 +3,7 @@
  * Gestión de tareas individuales con sincronización a calendario
  */
 
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { prisma } = require('../config/db');
 const calendarSync = require('../services/calendar-sync.service');
 const activityFeed = require('../services/activity-feed.service');
 const logger = require('../config/logger');

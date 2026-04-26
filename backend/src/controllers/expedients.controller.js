@@ -1,5 +1,6 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { prisma } = require('../config/db');
+const path = require('path');
+const fs = require('fs');
 const workflowService = require('../services/workflow.service');
 const checklistGenerator = require('../services/checklist.generator');
 const driveService = require('../services/drive.service');
@@ -8,6 +9,7 @@ const calendarSync = require('../services/calendar-sync.service');
 const activityFeed = require('../services/activity-feed.service');
 const lifecycleService = require('../services/client-lifecycle.service');
 const logger = require('../config/logger');
+const docusignService = require('../services/docusign.service');
 
 // ─── Generar código de expediente ─────────────────────────────────────────────
 async function generateCode() {
@@ -581,56 +583,103 @@ async function setExpedientRole(req, res) {
 }
 
 // ─── Firmas ────────────────────────────────────────────────────────────────────
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 async function getSignatures(req, res) {
   const signatures = await prisma.signature.findMany({
     where: { expedientId: req.params.id },
     orderBy: { createdAt: 'desc' },
-    include: { calendarEvent: { select: { id: true, startAt: true, completed: true } } },
+    include: {
+      calendarEvent: { select: { id: true, startAt: true, completed: true } },
+      signers: { orderBy: { routingOrder: 'asc' } },
+      document: { select: { id: true, name: true, docType: true } },
+    },
   });
   res.json(signatures);
 }
 
 async function createSignature(req, res) {
-  const { documentName, signerName, signerEmail, signerRole, expiresAt, signUrl, externalId } = req.body;
+  const { documentId, signingOrder = 'PARALLEL', signers, expiresAt } = req.body;
   const expedientId = req.params.id;
-  
-  // Get expedient for client info
+
+  if (!documentId) return res.status(400).json({ error: 'documentId es requerido' });
+  if (!Array.isArray(signers) || signers.length === 0) {
+    return res.status(400).json({ error: 'signers debe ser un array con al menos un firmante' });
+  }
+
+  // Validar emails
+  for (const s of signers) {
+    if (!s.name || !s.email) return res.status(400).json({ error: 'Cada firmante debe tener name y email' });
+    if (!EMAIL_REGEX.test(s.email)) return res.status(400).json({ error: `Email inválido: ${s.email}` });
+  }
+
+  // Validar routingOrder único si secuencial
+  if (signingOrder === 'SEQUENTIAL') {
+    const orders = signers.map(s => Number(s.routingOrder));
+    if (orders.some(o => !Number.isFinite(o))) {
+      return res.status(400).json({ error: 'En modo SEQUENTIAL todos los firmantes deben tener routingOrder numérico' });
+    }
+    if (new Set(orders).size !== orders.length) {
+      return res.status(400).json({ error: 'Los valores de routingOrder deben ser únicos' });
+    }
+  }
+
+  // Verificar que el documento pertenece al expediente
+  const document = await prisma.document.findFirst({
+    where: { id: documentId, expedientId },
+  });
+  if (!document) return res.status(404).json({ error: 'Documento no encontrado en este expediente' });
+
   const expedient = await prisma.expedient.findUnique({
     where: { id: expedientId },
     select: { clientId: true, code: true },
   });
-  
   if (!expedient) return res.status(404).json({ error: 'Expediente no encontrado' });
 
-  // Create signature and sync with calendar
+  // Ordenar firmantes si secuencial
+  const sortedSigners = signingOrder === 'SEQUENTIAL'
+    ? [...signers].sort((a, b) => Number(a.routingOrder) - Number(b.routingOrder))
+    : signers;
+
+  // Primer firmante para campos legacy de retrocompatibilidad
+  const primarySigner = sortedSigners[0];
+
   const result = await prisma.$transaction(async (tx) => {
-    // Create signature
     const signature = await tx.signature.create({
       data: {
         expedientId,
-        documentName,
-        signerName,
-        signerEmail,
-        signerRole,
-        status: signUrl ? 'ENVIADO' : 'PENDIENTE',
+        documentId,
+        documentName: document.name,
+        signerName: primarySigner.name,
+        signerEmail: primarySigner.email,
+        signerRole: primarySigner.role || null,
+        signingOrder,
+        status: 'PENDIENTE',
         expiresAt: expiresAt ? new Date(expiresAt) : null,
-        signUrl,
-        externalId,
+        signers: {
+          create: sortedSigners.map((s, i) => ({
+            name: s.name,
+            email: s.email,
+            role: s.role || 'OTRO',
+            routingOrder: signingOrder === 'SEQUENTIAL' ? Number(s.routingOrder) : i + 1,
+            status: 'PENDIENTE',
+          })),
+        },
       },
-      include: { expedient: { select: { clientId: true, code: true } } },
+      include: {
+        expedient: { select: { clientId: true, code: true } },
+        signers: { orderBy: { routingOrder: 'asc' } },
+        document: { select: { id: true, name: true, docType: true } },
+      },
     });
 
-    // Create calendar event
+    // Crear evento de calendario
     const eventData = calendarSync.buildCalendarEventFromSignature(signature);
     const calendarEvent = await tx.calendarEvent.create({
-      data: {
-        ...eventData,
-        signatureId: signature.id,
-        createdById: req.user.id,
-      },
+      data: { ...eventData, signatureId: signature.id, createdById: req.user.id },
     });
 
-    // Update signature with calendarEventId
     await tx.signature.update({
       where: { id: signature.id },
       data: { calendarEventId: calendarEvent.id },
@@ -643,26 +692,62 @@ async function createSignature(req, res) {
 }
 
 async function updateSignature(req, res) {
-  const { documentName, signerName, signerEmail, signerRole, expiresAt, signUrl, status } = req.body;
+  const { documentId, signingOrder, signers, expiresAt, status } = req.body;
   const signatureId = req.params.signatureId;
+  const expedientId = req.params.id;
 
   const signature = await prisma.signature.findUnique({
     where: { id: signatureId },
-    include: { expedient: { select: { clientId: true, code: true } } },
+    include: { signers: true },
   });
-
   if (!signature) return res.status(404).json({ error: 'Firma no encontrada' });
 
-  const data = {
-    documentName, signerName, signerEmail, signerRole,
-    expiresAt: expiresAt ? new Date(expiresAt) : null,
-    signUrl, status,
-  };
-  Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
+  // Validar documento si se cambia
+  let documentName = signature.documentName;
+  if (documentId && documentId !== signature.documentId) {
+    const document = await prisma.document.findFirst({ where: { id: documentId, expedientId } });
+    if (!document) return res.status(404).json({ error: 'Documento no encontrado en este expediente' });
+    documentName = document.name;
+  }
 
-  // Update signature and sync calendar
-  const result = await calendarSync.updateSignatureStatus(signatureId, status || signature.status, data);
-  
+  const updateData = {
+    ...(documentId && { documentId, documentName }),
+    ...(signingOrder && { signingOrder }),
+    ...(expiresAt !== undefined && { expiresAt: expiresAt ? new Date(expiresAt) : null }),
+    ...(status && { status }),
+  };
+
+  // Actualizar firmantes si se envían
+  if (Array.isArray(signers) && signers.length > 0) {
+    for (const s of signers) {
+      if (!s.name || !s.email) return res.status(400).json({ error: 'Cada firmante debe tener name y email' });
+      if (!EMAIL_REGEX.test(s.email)) return res.status(400).json({ error: `Email inválido: ${s.email}` });
+    }
+
+    const finalOrder = signingOrder || signature.signingOrder;
+    const sortedSigners = finalOrder === 'SEQUENTIAL'
+      ? [...signers].sort((a, b) => Number(a.routingOrder) - Number(b.routingOrder))
+      : signers;
+
+    const primarySigner = sortedSigners[0];
+    updateData.signerName = primarySigner.name;
+    updateData.signerEmail = primarySigner.email;
+    updateData.signerRole = primarySigner.role || null;
+
+    // Reemplazar firmantes en cascada
+    await prisma.signatureSigner.deleteMany({ where: { signatureId } });
+    updateData.signers = {
+      create: sortedSigners.map((s, i) => ({
+        name: s.name,
+        email: s.email,
+        role: s.role || 'OTRO',
+        routingOrder: finalOrder === 'SEQUENTIAL' ? Number(s.routingOrder) : i + 1,
+        status: 'PENDIENTE',
+      })),
+    };
+  }
+
+  const result = await calendarSync.updateSignatureStatus(signatureId, status || signature.status, updateData);
   res.json(result);
 }
 
@@ -676,17 +761,141 @@ async function updateSignatureStatus(req, res) {
   if (signUrl) additionalData.signUrl = signUrl;
 
   const result = await calendarSync.updateSignatureStatus(signatureId, status, additionalData);
-  
   res.json(result);
 }
 
 async function deleteSignature(req, res) {
   const signatureId = req.params.signatureId;
-  
+
+  const signature = await prisma.signature.findUnique({ where: { id: signatureId } });
+  if (!signature) return res.status(404).json({ error: 'Firma no encontrada' });
+
+  // Si ya fue enviada a DocuSign, intentar anularla antes de borrar
+  if (signature.envelopeId) {
+    try {
+      await docusignService.voidEnvelope(signature.envelopeId, 'Eliminado desde el CRM');
+    } catch (err) {
+      logger.warn(`[Firmas] No se pudo anular el envelope ${signature.envelopeId} en DocuSign:`, err.message);
+      // No bloqueamos el delete local aunque falle el proveedor
+    }
+  }
+
   await calendarSync.deleteSignatureCalendarEvent(signatureId);
   await prisma.signature.delete({ where: { id: signatureId } });
-  
   res.status(204).send();
+}
+
+async function sendSignatureToDocuSign(req, res) {
+  const { signatureId } = req.params;
+
+  if (!docusignService.isConfigured()) {
+    return res.status(501).json({
+      error: 'DOCUSIGN_NOT_CONFIGURED',
+      message: 'La integración con DocuSign no está activada todavía. Contacta con el administrador.',
+    });
+  }
+
+  const signature = await prisma.signature.findUnique({
+    where: { id: signatureId },
+    include: {
+      document: true,
+      signers: { orderBy: { routingOrder: 'asc' } },
+    },
+  });
+  if (!signature) return res.status(404).json({ error: 'Firma no encontrada' });
+
+  if (signature.envelopeId) {
+    return res.status(409).json({ error: 'Esta firma ya fue enviada a DocuSign' });
+  }
+
+  if (!signature.document?.filePath) {
+    return res.status(400).json({ error: 'El documento asociado no tiene archivo local disponible' });
+  }
+
+  try {
+    const { envelopeId, recipientIds } = await docusignService.createEnvelope({
+      documentPath: signature.document.filePath,
+      documentName: signature.document.name,
+      signers: signature.signers.map(s => ({
+        name: s.name,
+        email: s.email,
+        role: s.role,
+        routingOrder: s.routingOrder,
+      })),
+      signingOrder: signature.signingOrder,
+      expiresAt: signature.expiresAt || null,
+      metadata: { expedientId: signature.expedientId, signatureId },
+    });
+
+    // Persistir envelopeId y recipientIds en los signers
+    await prisma.$transaction([
+      prisma.signature.update({
+        where: { id: signatureId },
+        data: { envelopeId, provider: 'DOCUSIGN', status: 'ENVIADO' },
+      }),
+      ...signature.signers.map(s =>
+        prisma.signatureSigner.update({
+          where: { id: s.id },
+          data: {
+            recipientId: recipientIds?.[s.id] || null,
+            status: 'ENVIADO',
+          },
+        })
+      ),
+    ]);
+
+    const updated = await prisma.signature.findUnique({
+      where: { id: signatureId },
+      include: { signers: { orderBy: { routingOrder: 'asc' } }, document: { select: { id: true, name: true, docType: true } } },
+    });
+    res.json(updated);
+  } catch (err) {
+    if (err.code === 'DOCUSIGN_NOT_CONFIGURED') {
+      return res.status(501).json({ error: err.code, message: err.message });
+    }
+    logger.error('[Firmas] Error enviando a DocuSign:', err.message);
+    res.status(500).json({ error: err.message || 'Error al enviar a DocuSign' });
+  }
+}
+
+async function downloadSignedSignature(req, res) {
+  const { signatureId } = req.params;
+
+  const signature = await prisma.signature.findUnique({ where: { id: signatureId } });
+  if (!signature) return res.status(404).json({ error: 'Firma no encontrada' });
+
+  // Si el archivo firmado ya está en disco, servirlo directamente
+  if (signature.signedDocumentPath && fs.existsSync(signature.signedDocumentPath)) {
+    const absolutePath = path.resolve(signature.signedDocumentPath);
+    res.setHeader('Content-Disposition', `attachment; filename="firmado_${signatureId}.pdf"`);
+    res.setHeader('Content-Type', 'application/pdf');
+    return res.sendFile(absolutePath);
+  }
+
+  // Si no está en disco pero hay envelope y DocuSign está configurado, intentar descargarlo
+  if (signature.envelopeId) {
+    if (!docusignService.isConfigured()) {
+      return res.status(501).json({
+        error: 'DOCUSIGN_NOT_CONFIGURED',
+        message: 'La integración con DocuSign no está activada todavía.',
+      });
+    }
+    try {
+      const buffer = await docusignService.downloadSignedDocument(signature.envelopeId);
+      const savePath = path.join('backend', 'uploads', 'signed', `${signatureId}.pdf`);
+      fs.mkdirSync(path.dirname(savePath), { recursive: true });
+      fs.writeFileSync(savePath, buffer);
+      await prisma.signature.update({ where: { id: signatureId }, data: { signedDocumentPath: savePath } });
+      res.setHeader('Content-Disposition', `attachment; filename="firmado_${signatureId}.pdf"`);
+      res.setHeader('Content-Type', 'application/pdf');
+      return res.send(buffer);
+    } catch (err) {
+      logger.error('[Firmas] Error descargando firmado de DocuSign:', err.message);
+      return res.status(500).json({ error: err.message || 'Error al descargar el documento firmado' });
+    }
+  }
+
+  res.status(404).json({ error: 'Esta firma aún no ha sido enviada a firma electrónica' });
 }
 
 module.exports = {
@@ -698,4 +907,5 @@ module.exports = {
   getPhaseHistory,
   getLinkedExpedients, linkExpedient, unlinkExpedient, setExpedientRole,
   getSignatures, createSignature, updateSignature, updateSignatureStatus, deleteSignature,
+  sendSignatureToDocuSign, downloadSignedSignature,
 };

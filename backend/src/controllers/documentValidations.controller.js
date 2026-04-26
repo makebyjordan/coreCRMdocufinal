@@ -1,5 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { prisma } = require('../config/db');
 
 // ─── Listar validaciones de un documento ─────────────────────────────────────
 async function listByDocument(req, res) {

@@ -3,8 +3,7 @@
  * Centraliza la lógica de sincronización entre entidades y CalendarEvent
  */
 
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { prisma } = require('../config/db');
 
 /**
  * Build CalendarEvent data from a Visit

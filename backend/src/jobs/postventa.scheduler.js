@@ -1,9 +1,7 @@
 const cron = require('node-cron');
-const { PrismaClient } = require('@prisma/client');
+const { prisma } = require('../config/db');
 const notificationEngine = require('../services/notification.engine');
 const logger = require('../config/logger');
-
-const prisma = new PrismaClient();
 
 /**
  * Ejecuta cada día a las 09:00 y busca expedientes con postventa programada

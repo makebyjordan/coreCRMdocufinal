@@ -3,8 +3,7 @@
  * Gestión de notas estructuradas de clientes
  */
 
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { prisma } = require('../config/db');
 const activityFeed = require('../services/activity-feed.service');
 
 // Listar notas de un cliente

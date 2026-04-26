@@ -1,5 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { prisma } = require('../config/db');
 const checklistGenerator = require('./checklist.generator');
 const notificationEngine = require('./notification.engine');
 const logger = require('../config/logger');

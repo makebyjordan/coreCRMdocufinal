@@ -4,8 +4,7 @@
  * basado en actividad y expedientes del cliente
  */
 
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { prisma } = require('../config/db');
 const logger = require('../config/logger');
 const workflowEngine = require('./workflow-engine.service');
 

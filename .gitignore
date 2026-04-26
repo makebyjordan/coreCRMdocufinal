@@ -34,3 +34,8 @@ package-lock.json
 
 # OS
 .DS_Store
+
+# ─── DocuSign (no activado todavía) ──────────────────────────────────────
+backend/docusign-private.key
+backend/uploads/signed/*
+!backend/uploads/signed/.gitkeep

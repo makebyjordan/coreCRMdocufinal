@@ -129,6 +129,7 @@ export default function ExpedientDetailPage() {
   const [decision, setDecision] = useState('SI')
   const [notes, setNotes] = useState('')
   const [showParticipantModal, setShowParticipantModal] = useState(false)
+  const [pendingSignDoc, setPendingSignDoc] = useState(null)
 
   // Handle URL params for tab switching and element highlighting
   useEffect(() => {
@@ -354,9 +355,9 @@ export default function ExpedientDetailPage() {
         {tab === 'dashboard'     && <OperationDashboard exp={exp} />}
         {tab === 'overview'      && <ExpedientOverview exp={exp} renewMutation={renewMutation} />}
         {tab === 'visits'        && <VisitsPanel expedientId={id} />}
-        {tab === 'signatures'    && <SignaturesPanel expedientId={id} />}
+        {tab === 'signatures'    && <SignaturesPanel expedientId={id} pendingSignDoc={pendingSignDoc} setPendingSignDoc={setPendingSignDoc} />}
         {tab === 'checklist'     && <ChecklistPanel expedientId={id} />}
-        {tab === 'documents'     && <DocumentPanel expedientId={id} currentPhase={exp.currentPhase} operationType={exp.operationType} />}
+        {tab === 'documents'     && <DocumentPanel expedientId={id} currentPhase={exp.currentPhase} operationType={exp.operationType} onRequestSign={(doc) => { setPendingSignDoc(doc); handleTabChange('signatures') }} />}
         {tab === 'alerts'        && <AlertsPanel exp={exp} expedientId={id} />}
         {tab === 'timeline'      && <OperationTimeline exp={exp} />}
         {tab === 'linked'        && <LinkedExpedientsPanel expedientId={id} />}
@@ -1369,16 +1370,50 @@ function ParticipantModal({ expedientId, onClose, onSuccess }) {
 }
 
 // ─── Signatures Panel ────────────────────────────────────────────────────────
-function SignaturesPanel({ expedientId }) {
+// ─── Roles de firmante disponibles ───────────────────────────────────────────
+const SIGNER_ROLES = [
+  { value: 'AGENTE',      label: 'Agente' },
+  { value: 'COMPRADOR',   label: 'Comprador' },
+  { value: 'VENDEDOR',    label: 'Vendedor' },
+  { value: 'PROPIETARIO', label: 'Propietario' },
+  { value: 'INQUILINO',   label: 'Inquilino' },
+  { value: 'ARRENDADOR',  label: 'Arrendador' },
+  { value: 'AVALISTA',    label: 'Avalista' },
+  { value: 'CONYUGE',     label: 'Cónyuge' },
+  { value: 'OTRO',        label: 'Otro' },
+]
+
+function SignerStatusBadge({ status, signedAt }) {
+  if (status === 'FIRMADO') return <span className="text-green-500 text-[10px] font-medium">✅ Firmado{signedAt ? ` (${new Date(signedAt).toLocaleDateString('es-ES')})` : ''}</span>
+  if (status === 'RECHAZADO') return <span className="text-red-500 text-[10px] font-medium">❌ Rechazado</span>
+  if (status === 'ENVIADO') return <span className="text-purple-500 text-[10px] font-medium">📨 Enviado</span>
+  return <span className="text-gray-400 text-[10px]">⏳ Pendiente</span>
+}
+
+function SignaturesPanel({ expedientId, pendingSignDoc, setPendingSignDoc }) {
   const qc = useQueryClient()
   const navigate = useNavigate()
   const [showModal, setShowModal] = useState(false)
   const [editingSignature, setEditingSignature] = useState(null)
 
+  useEffect(() => {
+    if (pendingSignDoc) {
+      setEditingSignature(null)
+      setShowModal(true)
+    }
+  }, [pendingSignDoc])
+
   const { data: signatures, isLoading } = useQuery({
     queryKey: ['signatures', expedientId],
     queryFn: () => api.get(`/expedients/${expedientId}/signatures`).then(r => r.data),
   })
+
+  const { data: docusignStatus } = useQuery({
+    queryKey: ['integrations', 'docusign'],
+    queryFn: () => api.get('/integrations/docusign/status').then(r => r.data),
+    staleTime: 60_000,
+  })
+  const docusignConfigured = docusignStatus?.configured === true
 
   const mutation = useMutation({
     mutationFn: (data) => editingSignature
@@ -1389,6 +1424,7 @@ function SignaturesPanel({ expedientId }) {
       qc.invalidateQueries(['signatures', expedientId])
       setShowModal(false)
       setEditingSignature(null)
+      setPendingSignDoc(null)
     },
     onError: (err) => toast.error(err.response?.data?.error || 'Error'),
   })
@@ -1401,17 +1437,38 @@ function SignaturesPanel({ expedientId }) {
     },
   })
 
-  const updateStatusMutation = useMutation({
-    mutationFn: ({ id, status }) => api.patch(`/expedients/${expedientId}/signatures/${id}/status`, { status }),
+  const sendToDocuSignMutation = useMutation({
+    mutationFn: (signatureId) => api.post(`/expedients/${expedientId}/signatures/${signatureId}/send-to-docusign`),
     onSuccess: () => {
-      toast.success('Estado actualizado')
+      toast.success('Enviado a DocuSign correctamente')
       qc.invalidateQueries(['signatures', expedientId])
     },
+    onError: (err) => toast.error(err.response?.data?.message || err.response?.data?.error || 'Error al enviar a DocuSign'),
   })
 
   if (isLoading) return <div className="p-10 text-center text-gray-400">Cargando firmas...</div>
 
   const signaturesList = signatures || []
+
+  const aggregatedStatus = (sig) => {
+    const s = sig.signers || []
+    if (!s.length) return sig.status
+    if (s.every(x => x.status === 'FIRMADO')) return 'COMPLETADO'
+    if (s.some(x => x.status === 'RECHAZADO')) return 'RECHAZADO'
+    if (s.some(x => x.status === 'FIRMADO')) return 'EN_PROGRESO'
+    if (s.some(x => x.status === 'ENVIADO')) return 'ENVIADO'
+    return 'PENDIENTE'
+  }
+
+  const STATUS_COLOR = {
+    PENDIENTE:        'text-gray-600 bg-gray-500/20',
+    ENVIADO:          'text-purple-600 bg-purple-500/20',
+    EN_PROGRESO:      'text-yellow-600 bg-yellow-500/20',
+    COMPLETADO:       'text-green-600 bg-green-500/20',
+    RECHAZADO:        'text-red-600 bg-red-500/20',
+    CANCELADO:        'text-gray-500 bg-gray-400/20',
+    FIRMADO_COMPLETO: 'text-green-600 bg-green-500/20',
+  }
 
   return (
     <div className="card p-5">
@@ -1420,7 +1477,7 @@ function SignaturesPanel({ expedientId }) {
           <h3 className="font-bold text-lg text-[var(--text-main)]">Firmas y Documentos</h3>
           <p className="text-sm text-gray-500">Gestión de firmas electrónicas y documentos pendientes</p>
         </div>
-        <button onClick={() => setShowModal(true)} className="btn-primary">
+        <button onClick={() => { setEditingSignature(null); setPendingSignDoc(null); setShowModal(true) }} className="btn-primary">
           <Plus size={16} /> Añadir firma
         </button>
       </div>
@@ -1432,81 +1489,117 @@ function SignaturesPanel({ expedientId }) {
             <p className="text-gray-400">No hay firmas programadas</p>
           </div>
         )}
-        
-        {signaturesList.map(s => (
-          <div key={s.id} className="flex gap-4 p-4 rounded-xl border border-[var(--border-color)] hover:border-purple-100 hover:bg-[var(--sidebar-bg)]/30 transition-all group">
-            <div className="w-12 h-12 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 shrink-0">
-              <PenSquare size={20} />
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center justify-between mb-1">
-                <h4 className="font-bold text-[var(--text-main)]">{s.documentName}</h4>
-                <div className="flex items-center gap-2">
-                  {s.calendarEventId && (
-                    <span className="flex items-center gap-1 text-[10px] text-purple-600 bg-purple-500/10 px-2 py-0.5 rounded-full">
-                      <CalIcon size={10} /> En calendario
-                    </span>
+
+        {signaturesList.map(s => {
+          const agg = aggregatedStatus(s)
+          const allSigned = (s.signers || []).length > 0 && (s.signers || []).every(x => x.status === 'FIRMADO')
+          return (
+            <div key={s.id} className="p-4 rounded-xl border border-[var(--border-color)] hover:border-purple-100 hover:bg-[var(--sidebar-bg)]/30 transition-all group">
+              <div className="flex gap-4">
+                <div className="w-12 h-12 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 shrink-0">
+                  <PenSquare size={20} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
+                    <h4 className="font-bold text-[var(--text-main)] truncate">{s.documentName}</h4>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {s.calendarEventId && (
+                        <span className="flex items-center gap-1 text-[10px] text-purple-600 bg-purple-500/10 px-2 py-0.5 rounded-full">
+                          <CalIcon size={10} /> En calendario
+                        </span>
+                      )}
+                      {s.envelopeId && (
+                        <span className="text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full font-mono">
+                          DocuSign · {s.envelopeId.slice(0, 8)}…
+                        </span>
+                      )}
+                      <span className={`badge text-[10px] ${STATUS_COLOR[agg] || 'text-gray-600 bg-gray-500/20'}`}>
+                        {agg.replace(/_/g, ' ')}
+                      </span>
+                      <span className="text-xs text-gray-400">{new Date(s.createdAt).toLocaleDateString('es-ES')}</span>
+                    </div>
+                  </div>
+
+                  {(s.signers || []).length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Firmantes:</p>
+                      {(s.signers || []).map(sg => (
+                        <div key={sg.id} className="flex items-center gap-2 text-xs text-[var(--text-muted)] pl-2">
+                          <span className="font-medium">{sg.name}</span>
+                          <span className="text-gray-400">&lt;{sg.email}&gt;</span>
+                          <span className="text-[10px] text-gray-400">· {sg.role}</span>
+                          <SignerStatusBadge status={sg.status} signedAt={sg.signedAt} />
+                        </div>
+                      ))}
+                    </div>
                   )}
-                  <span className={`badge text-[10px] ${SIGNATURE_STATUS_COLORS[s.status] || 'text-gray-600 bg-gray-500/20'}`}>
-                    {SIGNATURE_STATUS_LABELS[s.status] || s.status}
-                  </span>
-                  <span className="text-xs text-gray-400">{new Date(s.createdAt).toLocaleDateString('es-ES')}</span>
+
+                  {s.expiresAt && (
+                    <p className="text-xs text-gray-400 mt-1">Expira: {new Date(s.expiresAt).toLocaleString('es-ES')}</p>
+                  )}
+
+                  {s.document && (
+                    <button
+                      onClick={() => {
+                        const token = localStorage.getItem('crm_token')
+                        window.open(`/api/documents/${s.document.id}/preview?token=${token}`, '_blank')
+                      }}
+                      className="text-xs text-blue-600 hover:text-blue-700 mt-2 flex items-center gap-1"
+                    >
+                      <ExternalLink size={12} /> Ver documento original
+                    </button>
+                  )}
+
+                  {allSigned && s.signedDocumentPath && (
+                    <a
+                      href={`/api/expedients/${expedientId}/signatures/${s.id}/download-signed?token=${localStorage.getItem('crm_token')}`}
+                      className="text-xs text-green-600 hover:text-green-700 mt-1 flex items-center gap-1"
+                      download
+                    >
+                      <CheckCircle size={12} /> Descargar documento firmado
+                    </a>
+                  )}
+
+                  {s.calendarEventId && (
+                    <button
+                      onClick={() => navigate('/calendario')}
+                      className="text-xs text-purple-600 hover:text-purple-700 mt-1 flex items-center gap-1"
+                    >
+                      <CalIcon size={12} /> Ver en calendario
+                    </button>
+                  )}
+
+                  {!s.envelopeId && (
+                    <div className="mt-2">
+                      <button
+                        onClick={() => sendToDocuSignMutation.mutate(s.id)}
+                        disabled={!docusignConfigured || sendToDocuSignMutation.isPending}
+                        title={!docusignConfigured ? 'Integración con DocuSign no activada. Contacta con el administrador.' : undefined}
+                        className="flex items-center gap-1 text-[11px] px-2 py-1 rounded border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-purple-300 text-purple-700 hover:bg-purple-50 disabled:border-gray-300 disabled:text-gray-400"
+                      >
+                        <Mail size={12} />
+                        {sendToDocuSignMutation.isPending ? 'Enviando...' : '📨 Enviar a DocuSign'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center gap-2 shrink-0">
+                  <button onClick={() => { setEditingSignature(s); setShowModal(true) }} className="p-1.5 text-gray-400 hover:text-blue-600"><Edit2 size={14} /></button>
+                  <button onClick={() => { if (confirm('¿Eliminar firma?')) deleteMutation.mutate(s.id) }} className="p-1.5 text-gray-400 hover:text-red-600"><Trash2 size={14} /></button>
                 </div>
               </div>
-              
-              <div className="text-sm text-[var(--text-muted)]">
-                <p><span className="font-medium">Firmante:</span> {s.signerName} ({s.signerEmail})</p>
-                <p><span className="font-medium">Rol:</span> {s.signerRole || 'No especificado'}</p>
-              </div>
-              
-              {s.expiresAt && (
-                <p className="text-xs text-gray-400 mt-1">
-                  Expira: {new Date(s.expiresAt).toLocaleString('es-ES')}
-                </p>
-              )}
-              
-              {s.signUrl && (
-                <a
-                  href={s.signUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-purple-600 hover:text-purple-700 mt-2 flex items-center gap-1 inline-flex"
-                >
-                  <ExternalLink size={12} /> Abrir link de firma
-                </a>
-              )}
-              
-              {s.calendarEventId && (
-                <button
-                  onClick={() => navigate('/calendario')}
-                  className="text-xs text-purple-600 hover:text-purple-700 mt-2 flex items-center gap-1"
-                >
-                  <CalIcon size={12} /> Ver en calendario
-                </button>
-              )}
             </div>
-            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center gap-2">
-              <button onClick={() => { setEditingSignature(s); setShowModal(true) }} className="p-1.5 text-gray-400 hover:text-blue-600"><Edit2 size={14} /></button>
-              <button onClick={() => { if (confirm('¿Eliminar firma?')) deleteMutation.mutate(s.id) }} className="p-1.5 text-gray-400 hover:text-red-600"><Trash2 size={14} /></button>
-              {s.status === 'PENDIENTE' && (
-                <button onClick={() => updateStatusMutation.mutate({ id: s.id, status: 'ENVIADO' })} className="p-1.5 text-gray-400 hover:text-purple-600" title="Marcar como enviado">
-                  <Mail size={14} />
-                </button>
-              )}
-              {s.status === 'ENVIADO' && (
-                <button onClick={() => updateStatusMutation.mutate({ id: s.id, status: 'FIRMADO' })} className="p-1.5 text-gray-400 hover:text-green-600" title="Marcar como firmado">
-                  <CheckCircle size={14} />
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       {showModal && (
         <SignatureModal
+          expedientId={expedientId}
           signature={editingSignature}
-          onClose={() => { setShowModal(false); setEditingSignature(null) }}
+          preselectedDocId={pendingSignDoc?.id || null}
+          onClose={() => { setShowModal(false); setEditingSignature(null); setPendingSignDoc(null) }}
           onSubmit={(d) => mutation.mutate(d)}
           isPending={mutation.isPending}
         />
@@ -1515,65 +1608,148 @@ function SignaturesPanel({ expedientId }) {
   )
 }
 
-function SignatureModal({ signature, onClose, onSubmit, isPending }) {
-  const [form, setForm] = useState({
-    documentName: signature?.documentName || '',
-    signerName: signature?.signerName || '',
-    signerEmail: signature?.signerEmail || '',
-    signerRole: signature?.signerRole || 'COMPRADOR',
-    expiresAt: signature?.expiresAt ? new Date(signature.expiresAt).toISOString().split('T')[0] : '',
-    signUrl: signature?.signUrl || '',
-    status: signature?.status || 'PENDIENTE',
+function SignatureModal({ expedientId, signature, preselectedDocId, onClose, onSubmit, isPending }) {
+  const { data: documents = [] } = useQuery({
+    queryKey: ['documents', expedientId],
+    queryFn: () => api.get(`/documents/expedient/${expedientId}`).then(r => r.data),
   })
 
+  const defaultSigners = signature?.signers?.length
+    ? signature.signers.map(s => ({ name: s.name, email: s.email, role: s.role, routingOrder: s.routingOrder }))
+    : [
+        { name: '', email: '', role: 'AGENTE', routingOrder: 1 },
+        { name: '', email: '', role: 'COMPRADOR', routingOrder: 2 },
+      ]
+
+  const [documentId, setDocumentId] = useState(preselectedDocId || signature?.documentId || '')
+  const [signingOrder, setSigningOrder] = useState(signature?.signingOrder || 'PARALLEL')
+  const [signers, setSigners] = useState(defaultSigners)
+  const [expiresAt, setExpiresAt] = useState(
+    signature?.expiresAt ? new Date(signature.expiresAt).toISOString().split('T')[0] : ''
+  )
+
+  const updateSigner = (idx, field, value) =>
+    setSigners(prev => prev.map((s, i) => i === idx ? { ...s, [field]: value } : s))
+
+  const addSigner = () =>
+    setSigners(prev => [...prev, { name: '', email: '', role: 'OTRO', routingOrder: prev.length + 1 }])
+
+  const removeSigner = (idx) => {
+    if (signers.length <= 1) return
+    setSigners(prev => prev.filter((_, i) => i !== idx).map((s, i) => ({ ...s, routingOrder: i + 1 })))
+  }
+
+  const moveUp = (idx) => {
+    if (idx === 0) return
+    setSigners(prev => {
+      const next = [...prev]
+      ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
+      return next.map((s, i) => ({ ...s, routingOrder: i + 1 }))
+    })
+  }
+
+  const moveDown = (idx) => {
+    if (idx === signers.length - 1) return
+    setSigners(prev => {
+      const next = [...prev]
+      ;[next[idx], next[idx + 1]] = [next[idx + 1], next[idx]]
+      return next.map((s, i) => ({ ...s, routingOrder: i + 1 }))
+    })
+  }
+
+  const canSave = documentId &&
+    signers.length > 0 &&
+    signers.every(s => s.name && s.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.email))
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    if (!canSave) return
+    onSubmit({ documentId, signingOrder, signers, expiresAt: expiresAt || undefined })
+  }
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-      <div className="card p-6 w-full max-w-md">
-        <div className="flex items-center justify-between mb-4">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4 overflow-y-auto">
+      <div className="card p-6 w-full max-w-lg my-4">
+        <div className="flex items-center justify-between mb-5">
           <h3 className="font-bold text-lg">{signature ? 'Editar firma' : 'Añadir firma'}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-[var(--text-muted)]"><X size={20} /></button>
         </div>
-        <form onSubmit={(e) => { e.preventDefault(); onSubmit(form) }} className="space-y-4">
+
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="label">Nombre del documento</label>
-            <input type="text" className="input" placeholder="Ej: Contrato de arras" value={form.documentName} onChange={e => setForm({ ...form, documentName: e.target.value })} required />
+            <label className="label">Documento a firmar *</label>
+            {documents.length === 0 ? (
+              <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                Sube primero un documento al expediente para poder firmarlo
+              </p>
+            ) : (
+              <select className="select" value={documentId} onChange={e => setDocumentId(e.target.value)} required>
+                <option value="">— Selecciona documento —</option>
+                {documents.map(doc => (
+                  <option key={doc.id} value={doc.id}>
+                    {doc.name} — {doc.docType.replace(/_/g, ' ')}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
+
           <div>
-            <label className="label">Nombre del firmante</label>
-            <input type="text" className="input" placeholder="Nombre completo" value={form.signerName} onChange={e => setForm({ ...form, signerName: e.target.value })} required />
-          </div>
-          <div>
-            <label className="label">Email del firmante</label>
-            <input type="email" className="input" placeholder="email@ejemplo.com" value={form.signerEmail} onChange={e => setForm({ ...form, signerEmail: e.target.value })} required />
-          </div>
-          <div>
-            <label className="label">Rol del firmante</label>
-            <select className="select" value={form.signerRole} onChange={e => setForm({ ...form, signerRole: e.target.value })}>
-              <option value="COMPRADOR">Comprador</option>
-              <option value="VENDEDOR">Vendedor</option>
-              <option value="PROPIETARIO">Propietario</option>
-              <option value="INQUILINO">Inquilino</option>
-              <option value="ARRENDADOR">Arrendador</option>
-              <option value="REPRESENTANTE">Representante</option>
-              <option value="OTRO">Otro</option>
+            <label className="label">Orden de firma</label>
+            <select className="select" value={signingOrder} onChange={e => setSigningOrder(e.target.value)}>
+              <option value="PARALLEL">En paralelo (todos a la vez)</option>
+              <option value="SEQUENTIAL">Secuencial (uno tras otro)</option>
             </select>
           </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="label mb-0">Firmantes *</label>
+              <button type="button" onClick={addSigner} className="text-xs text-purple-600 hover:text-purple-700 flex items-center gap-1">
+                <Plus size={13} /> Añadir firmante
+              </button>
+            </div>
+            <div className="space-y-2">
+              {signers.map((s, idx) => (
+                <div key={idx} className="flex gap-2 items-start p-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-color)]">
+                  {signingOrder === 'SEQUENTIAL' && (
+                    <div className="flex flex-col gap-0.5 pt-1 shrink-0">
+                      <span className="text-[10px] font-bold text-gray-500 text-center w-5">{idx + 1}</span>
+                      <button type="button" onClick={() => moveUp(idx)} disabled={idx === 0} className="p-0.5 text-gray-300 hover:text-gray-600 disabled:opacity-20">↑</button>
+                      <button type="button" onClick={() => moveDown(idx)} disabled={idx === signers.length - 1} className="p-0.5 text-gray-300 hover:text-gray-600 disabled:opacity-20">↓</button>
+                    </div>
+                  )}
+                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <input type="text" placeholder="Nombre" required className="input text-xs py-1"
+                      value={s.name} onChange={e => updateSigner(idx, 'name', e.target.value)} />
+                    <input type="email" placeholder="Email" required className="input text-xs py-1"
+                      value={s.email} onChange={e => updateSigner(idx, 'email', e.target.value)} />
+                    <select className="select text-xs py-1" value={s.role} onChange={e => updateSigner(idx, 'role', e.target.value)}>
+                      {SIGNER_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                    </select>
+                  </div>
+                  <button type="button" onClick={() => removeSigner(idx)} disabled={signers.length <= 1}
+                    className="p-1 text-gray-300 hover:text-red-500 disabled:opacity-20 shrink-0 mt-1">
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div>
             <label className="label">Fecha de expiración (opcional)</label>
-            <input type="date" className="input" value={form.expiresAt} onChange={e => setForm({ ...form, expiresAt: e.target.value })} />
-          </div>
-          <div>
-            <label className="label">Link de firma Signaturit (opcional)</label>
-            <input type="url" className="input" placeholder="https://..." value={form.signUrl} onChange={e => setForm({ ...form, signUrl: e.target.value })} />
+            <input type="date" className="input" value={expiresAt} onChange={e => setExpiresAt(e.target.value)} />
           </div>
 
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={onClose} className="btn-secondary">Cancelar</button>
-            <button type="submit" disabled={isPending} className="btn-primary">
+            <button type="submit" disabled={isPending || !canSave} className="btn-primary">
               {isPending ? 'Procesando...' : 'Guardar'}
             </button>
           </div>
         </form>
       </div>
     </div>
-  )}
+  )
+}

@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth.middleware');
 
+console.log('[DEBUG] Loading routes...');
+
 router.use('/auth', require('./auth.routes'));
 router.use('/clients', authenticate, require('./clients.routes'));
 router.use('/clients', authenticate, require('./clientNotes.routes'));
@@ -23,5 +25,7 @@ router.use('/document-validations', authenticate, require('./documentValidations
 router.use('/client-journey', authenticate, require('./clientJourney.routes'));
 router.use('/tasks', authenticate, require('./tasks.routes'));
 router.use('/workflows', authenticate, require('./workflows.routes'));
+router.use('/webhooks', require('./webhooks.routes'));
+router.use('/integrations', require('./integrations.routes'));
 
 module.exports = router;

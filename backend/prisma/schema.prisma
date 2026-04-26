@@ -63,7 +63,11 @@ enum DocumentStatus {
 enum SignatureStatus {
   PENDIENTE
   ENVIADO
+  EN_PROGRESO
   FIRMADO
+  FIRMADO_COMPLETO
+  RECHAZADO
+  CANCELADO
   EXPIRADO
 }
 
@@ -110,6 +114,7 @@ model User {
   activityEvents       ActivityEvent[]
   documentExpedientLinks DocumentExpedientLink[]
   clientRelationsLinked ClientRelation[] @relation("LinkedBy")
+  createdWorkflowRules WorkflowRule[]
 
   @@map("users")
 }
@@ -462,11 +467,24 @@ model Document {
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
+  // Vínculo con plantilla origen
+  sourceTemplateId String?
+  sourceTemplate   BaseDocument? @relation("TemplateSource", fields: [sourceTemplateId], references: [id], onDelete: SetNull)
+
+  // Datos usados al generar
+  templateData     Json?      // snapshot de los valores usados
+  isGenerated      Boolean    @default(false)
+  contentHtml      String?    @db.Text  // versión editable en HTML
+
+  // Firma (placeholder para integración futura con proveedor externo)
+  signatureStatus  String?    // "NO_REQUIERE" | "PENDIENTE" | "PARCIALMENTE_FIRMADO" | "FIRMADO_COMPLETO"
+
   expedient     Expedient            @relation(fields: [expedientId], references: [id], onDelete: Cascade)
   ownerClient   Client?              @relation("ClientDocuments", fields: [ownerClientId], references: [id], onDelete: SetNull)
   uploadedBy    User?                @relation(fields: [uploadedById], references: [id])
   validations   DocumentValidation[]
   expedientLinks DocumentExpedientLink[]
+  signatures    Signature[]
 
   @@map("documents")
 }
@@ -490,10 +508,10 @@ model DocumentValidation {
 model Signature {
   id              String          @id @default(cuid())
   expedientId     String
-  documentName    String
-  signerName      String
-  signerEmail     String
-  signerRole      String
+  documentName    String          // denormalizado, nombre del documento en el momento de crear
+  signerName      String?         // retrocompat: primer firmante
+  signerEmail     String?         // retrocompat: primer firmante
+  signerRole      String?         // retrocompat: primer firmante
   status          SignatureStatus  @default(PENDIENTE)
   externalId      String?
   signUrl         String?
@@ -504,10 +522,41 @@ model Signature {
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
+  // Relación con documento del expediente
+  documentId      String?
+  document        Document?       @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  // DocuSign
+  provider           String?      // "DOCUSIGN"
+  envelopeId         String?      @unique
+  signingOrder       String       @default("PARALLEL")  // "PARALLEL" | "SEQUENTIAL"
+  signedDocumentPath String?      // ruta local al PDF firmado descargado del proveedor
+
   expedient     Expedient     @relation(fields: [expedientId], references: [id], onDelete: Cascade)
   calendarEvent CalendarEvent? @relation(fields: [calendarEventId], references: [id])
+  signers       SignatureSigner[]
 
   @@map("signatures")
+}
+
+model SignatureSigner {
+  id              String    @id @default(cuid())
+  signatureId     String
+  name            String
+  email           String
+  role            String    // "AGENTE" | "COMPRADOR" | "VENDEDOR" | "PROPIETARIO" | "INQUILINO" | "AVALISTA" | "CONYUGE" | "OTRO"
+  routingOrder    Int       @default(1)
+  status          String    @default("PENDIENTE")  // "PENDIENTE" | "ENVIADO" | "FIRMADO" | "RECHAZADO"
+  signedAt        DateTime?
+  declinedAt      DateTime?
+  declinedReason  String?
+  recipientId     String?   // ID del recipient en DocuSign para mapear webhooks
+  createdAt       DateTime  @default(now())
+
+  signature Signature @relation(fields: [signatureId], references: [id], onDelete: Cascade)
+
+  @@index([signatureId])
+  @@map("signature_signers")
 }
 
 model EmailTemplate {
@@ -578,16 +627,27 @@ model Notification {
 }
 
 model BaseDocument {
-  id          String   @id @default(cuid())
-  name        String
-  category    String?  // VENTA, ALQUILER, GENERAL
-  driveUrl    String?
-  driveFileId String?
-  localPath   String?
-  mimeType    String?
-  fileSize    Int?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                String    @id @default(cuid())
+  name              String
+  category          String?   // VENTA, ALQUILER, GENERAL
+  driveUrl          String?
+  driveFileId       String?
+  localPath         String?
+  mimeType          String?
+  fileSize          Int?
+  
+  // Motor de plantillas
+  isTemplate        Boolean   @default(false)
+  templateFormat    String?   // "DOCX" | "HTML" | "PDF_FORM"
+  placeholders      Json?     // [{key: "cliente.nombre", label: "Nombre cliente", required: true}]
+  requiresSignature Boolean   @default(false)
+  signerRoles       Json?     // ["AGENTE", "CLIENTE_COMPRADOR", "CLIENTE_VENDEDOR"]
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relaciones
+  generatedDocuments Document[] @relation("TemplateSource")
 
   @@map("base_documents")
 }
@@ -736,6 +796,7 @@ model WorkflowRule {
   runCount    Int      @default(0)
   
   createdBy User? @relation(fields: [createdById], references: [id])
+  executions  WorkflowExecution[]
   
   @@index([triggerEvent, active])
   @@map("workflow_rules")
@@ -752,6 +813,7 @@ model WorkflowExecution {
   error       String?
   startedAt   DateTime @default(now())
   completedAt DateTime?
+  createdAt   DateTime @default(now())
   
   rule WorkflowRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
   

@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
   FileText, Plus, Search, Trash2, ExternalLink,
-  FileIcon, Filter, Upload, X, Pencil, Download, Building2
+  FileIcon, Filter, Upload, X, Pencil, Download, Building2,
+  FileSignature, CheckCircle
 } from 'lucide-react'
 import api from '../api/client'
 import useAuthStore from '../store/authStore'
@@ -12,14 +13,16 @@ export default function BaseDocuments() {
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('ALL')
+  const [filter, setFilter] = useState('ALL') // ALL | templates | files
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [editingDoc, setEditingDoc] = useState(null)
+  const [configuringTemplate, setConfiguringTemplate] = useState(null)
 
   const token = useAuthStore(s => s.token)
 
   const { data: docs = [], isLoading } = useQuery({
-    queryKey: ['base-documents'],
-    queryFn: () => api.get('/base-documents').then(r => r.data),
+    queryKey: ['base-documents', { filter, category }],
+    queryFn: () => api.get('/base-documents', { params: { filter: filter !== 'ALL' ? filter : undefined, category: category !== 'ALL' ? category : undefined } }).then(r => r.data),
   })
 
   const deleteMutation = useMutation({
@@ -41,8 +44,7 @@ export default function BaseDocuments() {
 
   const filteredDocs = (Array.isArray(docs) ? docs : []).filter(d => {
     const matchSearch = d.name.toLowerCase().includes(search.toLowerCase())
-    const matchCat = category === 'ALL' || d.category === category
-    return matchSearch && matchCat
+    return matchSearch
   })
 
   if (isLoading) return <div className="p-10 text-center text-gray-400 font-mono animate-pulse">Cargando repositorio de documentos...</div>
@@ -84,14 +86,25 @@ export default function BaseDocuments() {
             <option value="LEGAL">Legal / LOPD</option>
           </select>
         </div>
+        <div className="relative">
+          <FileSignature className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+          <select
+            className="select pl-10 h-11"
+            value={filter} onChange={e => setFilter(e.target.value)}
+          >
+            <option value="ALL">Todos los archivos</option>
+            <option value="templates">Solo plantillas</option>
+            <option value="files">Solo documentos</option>
+          </select>
+        </div>
       </div>
 
       <div className="flex flex-col gap-2">
         {filteredDocs.map(doc => (
           <div key={doc.id} className="group bg-[var(--card-bg)] px-4 py-3 rounded-xl border border-[var(--border-color)] hover:border-blue-200 hover:shadow-sm transition-all flex items-center gap-4">
             {/* Icono */}
-            <div className="p-2 bg-[var(--sidebar-bg)] text-blue-600 rounded-lg shrink-0">
-              <FileText size={20} />
+            <div className={`p-2 rounded-lg shrink-0 ${doc.isTemplate ? 'bg-purple-100 text-purple-600' : 'bg-[var(--sidebar-bg)] text-blue-600'}`}>
+              {doc.isTemplate ? <FileSignature size={20} /> : <FileText size={20} />}
             </div>
             
             {/* Info principal */}
@@ -100,6 +113,12 @@ export default function BaseDocuments() {
                 {doc.name}
               </h3>
               <div className="flex items-center gap-2 text-[10px] mt-0.5 whitespace-nowrap overflow-hidden">
+                {doc.isTemplate && (
+                  <span className="font-extrabold text-purple-600 uppercase tracking-wider flex items-center gap-1">
+                    <CheckCircle size={10} />
+                    PLANTILLA
+                  </span>
+                )}
                 <span className="font-extrabold text-blue-600 uppercase tracking-wider">{doc.category}</span>
                 <span className="text-[var(--border-color)]">•</span>
                 <span className="text-gray-400">{doc.fileSize ? `${(doc.fileSize / 1024).toFixed(0)} KB` : ''}</span>
@@ -114,6 +133,14 @@ export default function BaseDocuments() {
                 <a href={doc.driveUrl} target="_blank" rel="noreferrer" className="p-1.5 text-gray-400 hover:text-blue-600" title="Google Drive">
                   <ExternalLink size={16} />
                 </a>
+              )}
+              {doc.isTemplate && (
+                <button 
+                  onClick={() => setConfiguringTemplate(doc)}
+                  className="p-1.5 text-gray-400 hover:text-purple-600" title="Configurar plantilla"
+                >
+                  <FileSignature size={16} />
+                </button>
               )}
               <button 
                 onClick={() => setEditingDoc(doc)}
@@ -173,6 +200,17 @@ export default function BaseDocuments() {
         />
       )}
 
+      {configuringTemplate && (
+        <TemplateConfigModal
+          doc={configuringTemplate}
+          onClose={() => setConfiguringTemplate(null)}
+          onConfigured={() => {
+            setConfiguringTemplate(null)
+            qc.invalidateQueries(['base-documents'])
+          }}
+        />
+      )}
+
     </div>
   )
 }
@@ -181,6 +219,8 @@ export default function BaseDocuments() {
 function EditBaseModal({ doc, onClose, onSave, isPending }) {
   const [name, setName] = useState(doc.name)
   const [category, setCategory] = useState(doc.category)
+  const [isTemplate, setIsTemplate] = useState(doc.isTemplate || false)
+  const [requiresSignature, setRequiresSignature] = useState(doc.requiresSignature || false)
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
@@ -190,7 +230,7 @@ function EditBaseModal({ doc, onClose, onSave, isPending }) {
           <button onClick={onClose} className="p-1 hover:bg-[var(--sidebar-bg)] rounded-full transition-colors"><X size={20} /></button>
         </div>
 
-        <form onSubmit={(e) => { e.preventDefault(); onSave({ name, category }) }} className="p-6 space-y-5">
+        <form onSubmit={(e) => { e.preventDefault(); onSave({ name, category, isTemplate, requiresSignature }) }} className="p-6 space-y-5">
           <div className="space-y-1">
             <label className="text-xs font-bold text-gray-500 ml-1">NOMBRE DEL DOCUMENTO</label>
             <input
@@ -208,6 +248,30 @@ function EditBaseModal({ doc, onClose, onSave, isPending }) {
               <option value="ALQUILER">Alquileres</option>
               <option value="LEGAL">Legal / LOPD</option>
             </select>
+          </div>
+
+          <div className="space-y-3 pt-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isTemplate}
+                onChange={e => setIsTemplate(e.target.checked)}
+                className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+              />
+              <span className="text-sm text-[var(--text-main)]">Es plantilla rellenable</span>
+            </label>
+            
+            {isTemplate && (
+              <label className="flex items-center gap-2 cursor-pointer ml-6">
+                <input
+                  type="checkbox"
+                  checked={requiresSignature}
+                  onChange={e => setRequiresSignature(e.target.checked)}
+                  className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+                />
+                <span className="text-sm text-[var(--text-main)]">Requiere firma digital</span>
+              </label>
+            )}
           </div>
 
           <div className="flex gap-3 pt-2">
@@ -230,10 +294,100 @@ function EditBaseModal({ doc, onClose, onSave, isPending }) {
   )
 }
 
+function TemplateConfigModal({ doc, onClose, onConfigured }) {
+  const [isPending, setIsPending] = useState(false)
+  const [placeholders, setPlaceholders] = useState([])
+
+  useState(() => {
+    if (doc.placeholders) {
+      try {
+        const parsed = typeof doc.placeholders === 'string' ? JSON.parse(doc.placeholders) : doc.placeholders
+        setPlaceholders(parsed || [])
+      } catch (e) {
+        setPlaceholders([])
+      }
+    }
+  }, [doc])
+
+  const handleDetect = async () => {
+    setIsPending(true)
+    try {
+      const res = await api.post(`/base-documents/${doc.id}/detect-placeholders`)
+      setPlaceholders(res.data.placeholders || [])
+      toast.success(`${res.data.placeholders?.length || 0} placeholders detectados`)
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Error al detectar')
+    } finally {
+      setIsPending(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+      <div className="bg-[var(--card-bg)] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
+        <div className="flex items-center justify-between p-5 border-b border-[var(--border-color)]">
+          <div>
+            <h3 className="font-bold text-lg text-[var(--text-main)]">Configurar Plantilla</h3>
+            <p className="text-sm text-gray-500">{doc.name}</p>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-[var(--sidebar-bg)] rounded-full"><X size={20} /></button>
+        </div>
+
+        <div className="p-6 space-y-4 overflow-y-auto max-h-[60vh]">
+          <div className="flex gap-2">
+            <button
+              onClick={handleDetect}
+              disabled={isPending}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50"
+            >
+              {isPending ? 'Detectando...' : 'Detectar Placeholders'}
+            </button>
+          </div>
+
+          {placeholders.length > 0 ? (
+            <div className="space-y-2">
+              <h4 className="font-medium text-sm text-[var(--text-main)]">Placeholders detectados:</h4>
+              <div className="grid grid-cols-2 gap-2">
+                {placeholders.map((p, i) => (
+                  <div key={i} className="flex items-center gap-2 p-2 bg-[var(--sidebar-bg)] rounded-lg text-sm">
+                    <code className="text-purple-600 font-mono">{'{{'}{p.key}{'}}'}</code>
+                    <span className="text-gray-500">-</span>
+                    <span className="text-gray-700">{p.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-gray-500 text-sm">No hay placeholders configurados. Haz clic en "Detectar Placeholders" para analizar el documento.</p>
+          )}
+
+          <div className="bg-blue-50 p-4 rounded-lg text-sm text-blue-800">
+            <p className="font-medium">Variables disponibles:</p>
+            <p className="mt-1">cliente.nombre, cliente.apellidos, cliente.dni, cliente.email, cliente.telefono...</p>
+            <p className="mt-1 text-blue-600">Usa la sintaxis {'{{variable.subvariable}}'} en tu documento DOCX.</p>
+          </div>
+        </div>
+
+        <div className="p-4 border-t border-[var(--border-color)] flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm">Cerrar</button>
+          <button 
+            onClick={onConfigured}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+          >
+            Guardar configuración
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function UploadBaseModal({ onClose, onSuccess }) {
   const [file, setFile] = useState(null)
   const [name, setName] = useState('')
   const [category, setCategory] = useState('GENERAL')
+  const [isTemplate, setIsTemplate] = useState(false)
+  const [requiresSignature, setRequiresSignature] = useState(false)
   const [isPending, setIsPending] = useState(false)
 
   const handleUpload = async (e) => {
@@ -245,6 +399,8 @@ function UploadBaseModal({ onClose, onSuccess }) {
     formData.append('file', file)
     formData.append('name', name || file.name)
     formData.append('category', category)
+    formData.append('isTemplate', isTemplate)
+    formData.append('requiresSignature', requiresSignature)
 
     try {
       await api.post('/base-documents', formData)
@@ -312,6 +468,30 @@ function UploadBaseModal({ onClose, onSuccess }) {
               <option value="ALQUILER">Alquileres</option>
               <option value="LEGAL">Legal / LOPD</option>
             </select>
+          </div>
+
+          <div className="space-y-3 pt-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isTemplate}
+                onChange={e => setIsTemplate(e.target.checked)}
+                className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+              />
+              <span className="text-sm text-[var(--text-main)]">Es plantilla rellenable</span>
+            </label>
+            
+            {isTemplate && (
+              <label className="flex items-center gap-2 cursor-pointer ml-6">
+                <input
+                  type="checkbox"
+                  checked={requiresSignature}
+                  onChange={e => setRequiresSignature(e.target.checked)}
+                  className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+                />
+                <span className="text-sm text-[var(--text-main)]">Requiere firma digital</span>
+              </label>
+            )}
           </div>
 
           <div className="flex gap-3 pt-2">

@@ -1,5 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { prisma } = require('../config/db');
 
 async function list(req, res) {
   const templates = await prisma.emailTemplate.findMany({ orderBy: { type: 'asc' } });

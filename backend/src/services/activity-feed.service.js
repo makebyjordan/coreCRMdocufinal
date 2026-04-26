@@ -4,8 +4,7 @@
  * NO lanza errores al caller - si falla el log, solo warning y sigue
  */
 
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { prisma } = require('../config/db');
 const logger = require('../config/logger');
 
 // Tipos de eventos estándar

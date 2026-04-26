@@ -3,8 +3,7 @@
  * Registro de comunicaciones con clientes (llamadas, emails, whatsapp, etc.)
  */
 
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { prisma } = require('../config/db');
 const activityFeed = require('../services/activity-feed.service');
 const logger = require('../config/logger');
 

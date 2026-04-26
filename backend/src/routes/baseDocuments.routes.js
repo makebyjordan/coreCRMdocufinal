@@ -10,4 +10,8 @@ router.get('/:id/preview', ctrl.preview);
 router.get('/:id/download', ctrl.download);
 router.delete('/:id', ctrl.remove);
 
+// Template endpoints
+router.post('/:id/detect-placeholders', ctrl.detectPlaceholders);
+router.get('/template-variables', ctrl.getTemplateVariables);
+
 module.exports = router;

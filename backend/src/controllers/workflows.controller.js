@@ -3,8 +3,7 @@
  * Administra reglas de automatización
  */
 
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { prisma } = require('../config/db');
 const workflowEngine = require('../services/workflow-engine.service');
 
 // GET /workflows - Listar todas las reglas
