@@ -5,7 +5,7 @@ async function listByDocument(req, res) {
   const validations = await prisma.documentValidation.findMany({
     where: { documentId: req.params.documentId },
     include: {
-      validator: { select: { id: true, name: true, role: true } },
+      validator: { select: { id: true, name: true, userRoles: { select: { role: true } } } },
     },
     orderBy: { validatedAt: 'desc' },
   });
@@ -33,7 +33,7 @@ async function create(req, res) {
       expiryDate: expiryDate ? new Date(expiryDate) : null,
     },
     include: {
-      validator: { select: { id: true, name: true, role: true } },
+      validator: { select: { id: true, name: true, userRoles: { select: { role: true } } } },
     },
   });
 
@@ -62,7 +62,7 @@ async function listByExpedient(req, res) {
     where: { expedientId },
     include: {
       validations: {
-        include: { validator: { select: { id: true, name: true, role: true } } },
+        include: { validator: { select: { id: true, name: true, userRoles: { select: { role: true } } } } },
         orderBy: { validatedAt: 'desc' },
         take: 1,
       },

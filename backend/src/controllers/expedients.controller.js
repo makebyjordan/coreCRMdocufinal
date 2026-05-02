@@ -10,6 +10,7 @@ const activityFeed = require('../services/activity-feed.service');
 const lifecycleService = require('../services/client-lifecycle.service');
 const logger = require('../config/logger');
 const docusignService = require('../services/docusign.service');
+const { isCommercial } = require('../utils/roleHelper');
 
 // ─── Generar código de expediente ─────────────────────────────────────────────
 async function generateCode() {
@@ -46,7 +47,7 @@ async function list(req, res) {
   };
 
   // Comerciales solo ven sus propios expedientes
-  if (req.user.role === 'COMERCIAL') {
+  if (isCommercial(req.user)) {
     where.assignments = { some: { userId: req.user.id } };
   }
 
@@ -56,7 +57,7 @@ async function list(req, res) {
       orderBy: { updatedAt: 'desc' },
       include: {
         client: true,
-        assignments: { include: { user: { select: { id: true, name: true, role: true } } } },
+        assignments: { include: { user: { select: { id: true, name: true, userRoles: true } } } },
         _count: { select: { documents: true, checklists: true } },
       },
     }),
@@ -99,7 +100,7 @@ async function kanban(req, res) {
     'CIERRE_COMPRA', 'GESTION_POST_COMPRA',
   ];
 
-  const where = req.user.role === 'COMERCIAL'
+  const where = isCommercial(req.user)
     ? { assignments: { some: { userId: req.user.id } }, status: { not: 'CANCELADO' } }
     : { status: { not: 'CANCELADO' } };
 
@@ -107,7 +108,7 @@ async function kanban(req, res) {
     where,
     include: {
       client: { select: { id: true, firstName: true, lastName: true, companyName: true } },
-      assignments: { include: { user: { select: { id: true, name: true, role: true } } } },
+      assignments: { include: { user: { select: { id: true, name: true, userRoles: true } } } },
     },
     orderBy: { updatedAt: 'desc' },
   });
@@ -126,7 +127,7 @@ async function getById(req, res) {
     where: { id: req.params.id },
     include: {
       client: true,
-      assignments: { include: { user: { select: { id: true, name: true, email: true, role: true, phone: true } } } },
+      assignments: { include: { user: { select: { id: true, name: true, email: true, userRoles: { select: { role: true } }, phone: true } } } },
       checklists: {
         include: { template: true, items: { orderBy: { order: 'asc' } } },
         orderBy: { createdAt: 'desc' },
@@ -137,7 +138,7 @@ async function getById(req, res) {
       visits: { orderBy: { date: 'desc' } },
       clientRoles: { include: { client: true }, orderBy: { createdAt: 'asc' } },
       phaseHistory: {
-        include: { changedBy: { select: { name: true, role: true } } },
+        include: { changedBy: { select: { name: true, userRoles: { select: { role: true } } } } },
         orderBy: { createdAt: 'desc' },
       },
     },
@@ -435,7 +436,7 @@ async function renewExclusivity(req, res) {
 async function getAssignments(req, res) {
   const assignments = await prisma.expedientAssignment.findMany({
     where: { expedientId: req.params.id },
-    include: { user: { select: { id: true, name: true, email: true, role: true, phone: true } } },
+    include: { user: { select: { id: true, name: true, email: true, userRoles: { select: { role: true } }, phone: true } } },
   });
   res.json(assignments);
 }
@@ -502,7 +503,7 @@ async function removeBuyer(req, res) {
 async function getPhaseHistory(req, res) {
   const history = await prisma.phaseHistory.findMany({
     where: { expedientId: req.params.id },
-    include: { changedBy: { select: { name: true, role: true } } },
+    include: { changedBy: { select: { name: true, userRoles: { select: { role: true } } } } },
     orderBy: { createdAt: 'desc' },
   });
   res.json(history);
@@ -523,7 +524,7 @@ async function getLinkedExpedients(req, res) {
       where: { parentExpedientId: id },
       include: {
         client: { select: { id: true, firstName: true, lastName: true, companyName: true } },
-        assignments: { include: { user: { select: { id: true, name: true, role: true } } } },
+        assignments: { include: { user: { select: { id: true, name: true, userRoles: true } } } },
         _count: { select: { documents: true, checklists: true } },
       },
     }),
@@ -532,7 +533,7 @@ async function getLinkedExpedients(req, res) {
           where: { id: expedient.parentExpedientId },
           include: {
             client: { select: { id: true, firstName: true, lastName: true, companyName: true } },
-            assignments: { include: { user: { select: { id: true, name: true, role: true } } } },
+            assignments: { include: { user: { select: { id: true, name: true, userRoles: true } } } },
           },
         })
       : null,

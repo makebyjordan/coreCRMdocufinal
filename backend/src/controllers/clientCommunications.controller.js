@@ -1,3 +1,4 @@
+const { isAdmin, isCommercial, userHasAnyRole } = require('../utils/roleHelper');
 /**
  * ClientCommunications Controller
  * Registro de comunicaciones con clientes (llamadas, emails, whatsapp, etc.)
@@ -155,7 +156,7 @@ async function update(req, res) {
   }
 
   // Solo permitir actualizar si el usuario es el creador o admin
-  if (existing.sentById !== req.user.id && req.user.role !== 'ADMINISTRACION' && req.user.role !== 'DIRECCION') {
+  if (existing.sentById !== req.user.id && !userHasAnyRole(req.user, 'ADMINISTRACION') && !userHasAnyRole(req.user, 'DIRECCION')) {
     return res.status(403).json({ error: 'No tienes permisos para editar esta comunicación' });
   }
 
@@ -188,7 +189,7 @@ async function remove(req, res) {
     return res.status(404).json({ error: 'Comunicación no encontrada' });
   }
 
-  if (existing.sentById !== req.user.id && req.user.role !== 'ADMINISTRACION' && req.user.role !== 'DIRECCION') {
+  if (existing.sentById !== req.user.id && !userHasAnyRole(req.user, 'ADMINISTRACION') && !userHasAnyRole(req.user, 'DIRECCION')) {
     return res.status(403).json({ error: 'No tienes permisos para eliminar esta comunicación' });
   }
 

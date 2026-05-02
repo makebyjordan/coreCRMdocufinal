@@ -17,7 +17,7 @@ async function listByExpedient(req, res) {
     };
     const documents = await prisma.document.findMany({
       where,
-      include: { uploadedBy: { select: { name: true, role: true } } },
+      include: { uploadedBy: { select: { name: true, userRoles: { select: { role: true } } } } },
       orderBy: { createdAt: 'desc' },
     });
     res.json(documents);
@@ -70,7 +70,7 @@ async function upload(req, res) {
         driveFileId,
         driveUrl,
       },
-      include: { uploadedBy: { select: { name: true, role: true } } },
+      include: { uploadedBy: { select: { name: true, userRoles: { select: { role: true } } } } },
     });
 
     // ─── ACTIVITY FEED (post-commit, silencioso) ─────────────
@@ -203,16 +203,27 @@ async function download(req, res) {
     if (doc.filePath && fs.existsSync(doc.filePath)) {
       const absolutePath = path.resolve(doc.filePath);
       const ext = path.extname(doc.filePath);
-      const safeName = doc.name.endsWith(ext) ? doc.name : `${doc.name}${ext}`;
       
-      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(safeName)}"`);
-      if (doc.mimeType) res.setHeader('Content-Type', doc.mimeType);
-      return res.sendFile(absolutePath);
+      // Asegurar que el nombre tenga la extensión correcta si no la tiene
+      let safeName = doc.name;
+      if (ext && !safeName.toLowerCase().endsWith(ext.toLowerCase())) {
+        safeName += ext;
+      }
+
+      // res.download maneja automáticamente Content-Disposition y Content-Type
+      return res.download(absolutePath, safeName, (err) => {
+        if (err) {
+          if (!res.headersSent) {
+            logger.error('[Documents] Error en res.download:', err.message);
+            res.status(500).json({ error: 'Error al transferir el archivo' });
+          }
+        }
+      });
     } else if (doc.driveUrl) {
       return res.redirect(doc.driveUrl);
     }
 
-    res.status(404).json({ error: 'Archivo no disponible' });
+    res.status(404).json({ error: 'Archivo no disponible localmente ni en Drive' });
   } catch (err) {
     logger.error('[Documents] Error al descargar:', err.message);
     res.status(500).json({ error: 'Error al descargar el documento' });

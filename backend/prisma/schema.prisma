@@ -5,6 +5,7 @@ generator client {
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
@@ -15,6 +16,13 @@ enum UserRole {
   MARKETING
   DIRECCION
   ADMINISTRACION
+}
+
+enum CollaboratorRole {
+  ASIGNADO              // Responsable principal
+  CO_RESPONSABLE        // Co-responsable
+  REVISOR               // Revisor
+  OBSERVADOR            // Observador
 }
 
 enum ClientType {
@@ -87,6 +95,72 @@ enum NotificationStatus {
   FALLIDO
 }
 
+// ─── Nuevos Enums (Fase 1) ────────────────────────────────────────────────────
+
+enum ReportType {
+  EXPEDIENTS_EXPORT
+  COMMISSIONS
+  TIMELINE_ANALYSIS
+  KPI_DASHBOARD
+  POSTVENTA
+  BENCHMARK
+}
+
+enum ReportFormat {
+  CSV
+  PDF
+  XLSX
+}
+
+enum ClientSegmentStatus {
+  VIP
+  NORMAL
+  RIESGO
+  DORMIDO
+}
+
+enum AuditAction {
+  CREATED
+  UPDATED
+  DELETED
+  CHANGED_PHASE
+  ASSIGNED
+  DOCUMENT_UPLOADED
+  DOCUMENT_VALIDATED
+  DOCUMENT_REJECTED
+  SIGNATURE_INITIATED
+  SIGNATURE_COMPLETED
+  NOTIFICATION_SENT
+}
+
+enum BulkActionType {
+  CHANGE_PHASE
+  ASSIGN_USER
+  ADD_TAG
+  REMOVE_TAG
+  UPDATE_STATUS
+}
+
+enum BulkActionStatus {
+  PENDING
+  EXECUTING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum UserSessionStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
+enum PlatformType {
+  iOS
+  Android
+  Web
+}
+
 // ─── Modelos ──────────────────────────────────────────────────────────────────
 
 model User {
@@ -94,11 +168,16 @@ model User {
   email     String   @unique
   name      String
   password  String
-  role      UserRole
   phone     String?
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Múltiples roles
+  userRoles            UserRoleAssignment[] @relation("userRoles")
+
+  // Colaborador en expedientes
+  expedientCollaborations ExpedientCollaborator[] @relation("expedientCollaborations")
 
   assignments          ExpedientAssignment[]
   uploadedDocuments    Document[]
@@ -115,6 +194,22 @@ model User {
   documentExpedientLinks DocumentExpedientLink[]
   clientRelationsLinked ClientRelation[] @relation("LinkedBy")
   createdWorkflowRules WorkflowRule[]
+  uploadedMedia        PropertyMedia[]
+  integrations         IntegrationCredential[]
+
+  // FASE 1 - Nuevas relaciones
+  reportsCreated       Report[]
+  commissionsEarned    Commission[]
+  savedSearches        SavedSearch[]
+  chatThreadsCreated   ChatThread[]
+  chatMessages         ChatMessage[]
+  chatParticipants     ChatParticipant[]
+  auditLogs           DetailedActivityLog[]
+  auditLogsOwn        AuditLog[]
+  userPreferences     UserPreference?
+  bulkActions         BulkAction[]
+  devices             DeviceRegistration[]
+  userSessions        UserSession[]
 
   @@map("users")
 }
@@ -161,6 +256,18 @@ model Client {
   ownedDocuments    Document[]       @relation("ClientDocuments")
   relationsA        ClientRelation[] @relation("ClientRelationsA")
   relationsB        ClientRelation[] @relation("ClientRelationsB")
+
+  // FASE 1 - Nuevas relaciones
+  segment           ClientSegment?
+  chatThreads       ChatThread[]
+  referredBy        ClientReferral[] @relation("ReferrerClient")
+  referredClients   ClientReferral[] @relation("ReferredClient")
+  searchIndexes     SearchIndex[]
+  activityLogs      DetailedActivityLog[]
+
+  // FASE 2 - AI/ML relaciones
+  prediction        ClientPrediction?
+  dormantAnalysis   DormantClientAnalysis[]
 
   @@map("clients")
 }
@@ -241,6 +348,7 @@ model Expedient {
   client         Client                @relation(fields: [clientId], references: [id])
   clientRoles    ExpedientClient[]
   assignments    ExpedientAssignment[]
+  collaborators  ExpedientCollaborator[]
   checklists     ChecklistInstance[]
   documents      Document[]
   signatures     Signature[]
@@ -253,6 +361,7 @@ model Expedient {
   communications ClientCommunication[]
   activityEvents ActivityEvent[]
   documentExpedientLinks DocumentExpedientLink[]
+  propertyMedia  PropertyMedia[]
 
   // Jerarquía simple (captación padre / venta hijo)
   parentExpedient Expedient?  @relation("ExpedientHierarchy", fields: [parentExpedientId], references: [id])
@@ -261,6 +370,18 @@ model Expedient {
   // Vinculaciones avanzadas (muchos a muchos)
   outgoingLinks   ExpedientLink[] @relation("ExpedientLinks")
   incomingLinks   ExpedientLink[] @relation("LinkedExpedients")
+  portalReferences  PortalMediaReference[]
+  syncLogs          MediaSyncLog[]
+
+  // FASE 1 - Nuevas relaciones
+  commissions     Commission[]
+  chatThreads     ChatThread[]
+  activityLogs    DetailedActivityLog[]
+  searchIndexes   SearchIndex[]
+
+  // FASE 2 - AI/ML relaciones
+  recommendation  ExpedientRecommendation?
+  aiTemplates     AITemplate[]
 
   @@map("expedients")
 }
@@ -485,6 +606,12 @@ model Document {
   validations   DocumentValidation[]
   expedientLinks DocumentExpedientLink[]
   signatures    Signature[]
+
+  // FASE 1
+  encryption    DocumentEncryption?
+
+  // FASE 2 - AI/ML
+  analysis      DocumentAnalysis?
 
   @@map("documents")
 }
@@ -814,10 +941,704 @@ model WorkflowExecution {
   startedAt   DateTime @default(now())
   completedAt DateTime?
   createdAt   DateTime @default(now())
-  
+
   rule WorkflowRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
-  
+
   @@index([ruleId, status])
   @@index([clientId, createdAt])
   @@map("workflow_executions")
 }
+
+// ─── Enums Multimedia ───────────────────────────────────────────────────────
+
+
+// ─── Enums Integraciones Portales ───────────────────────────────────────────
+
+enum PortalType {
+  IDEALISTA
+  FOTOCASA
+  HABITACLIA
+  PISOS_COM
+  INMUEBLES_NET
+  CUSTOM
+}
+
+enum PortalMediaSyncStatus {
+  PENDING
+  SYNCING
+  PUBLISHED
+  FAILED
+  REMOVED
+  ARCHIVED
+}
+
+enum MediaSyncLogStatus {
+  QUEUED
+  PROCESSING
+  SUCCESS
+  FAILED
+}
+
+enum MediaSyncAction {
+  UPLOAD
+  UPDATE
+  DELETE
+  SYNC
+  VALIDATE
+}
+enum MediaType {
+  PHOTO
+  VIDEO
+  FLOOR_PLAN
+  TOUR_360
+  DOCUMENT_MKT
+}
+
+enum MediaStatus {
+  ACTIVE
+  INACTIVE
+  DELETED
+  ARCHIVED
+}
+
+// ─── Modelo Multimedia para Galería ─────────────────────────────────────────
+
+model PropertyMedia {
+  id           String      @id @default(cuid())
+  expedientId  String
+  uploadedById String?
+  credentialId String?
+  filename     String
+  originalName String
+  mimeType     String
+  fileSize     Int
+  filePath     String
+  type         MediaType   @default(PHOTO)
+  status       MediaStatus @default(ACTIVE)
+  title        String?
+  description  String?
+  order        Int         @default(0)
+  isCover      Boolean     @default(false)
+  portalSync   Json        @default("{}")
+  lastSyncAt   DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  expedient  Expedient @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  uploadedBy User?     @relation(fields: [uploadedById], references: [id])
+  credential    IntegrationCredential? @relation(fields: [credentialId], references: [id], onDelete: SetNull)
+  syncLogs      MediaSyncLog[]
+  portalReferences  PortalMediaReference[]
+
+  @@index([expedientId, type])
+  @@index([expedientId, order])
+  @@map("property_media")
+}
+
+
+
+// ─── Modelo Portal Integration Credential ─────────────────────────────────────
+
+model IntegrationCredential {
+  id                String      @id @default(cuid())
+  
+  // Portal
+  portal            PortalType
+  isActive          Boolean     @default(false)
+  
+  // Credenciales (encriptadas en .env)
+  apiKey            String?     @db.Text
+  apiSecret         String?     @db.Text
+  apiToken          String?     @db.Text
+  webhookSecret     String?
+  
+  // Config específica
+  portalConfig      Json?
+  
+  // Sincronización
+  syncFrequency     String      @default("MANUAL")
+  lastSyncAt        DateTime?
+  nextSyncAt        DateTime?
+  isSyncing         Boolean     @default(false)
+  
+  // Auditoría
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  createdById       String
+  lastUsedAt        DateTime?
+  
+  // Relaciones
+  createdBy         User                      @relation(fields: [createdById], references: [id])
+  mediaAssets       PropertyMedia[]
+  syncLogs          MediaSyncLog[]
+  portalReferences  PortalMediaReference[]
+  
+  @@unique([portal])
+  @@map("integration_credentials")
+}
+
+// ─── Modelo Portal Media Reference ───────────────────────────────────────────
+
+model PortalMediaReference {
+  id                String      @id @default(cuid())
+  
+  mediaAssetId      String
+  credentialId      String
+  expedientId       String
+  
+  // ID en el portal
+  portalMediaId     String
+  portalUrl         String?
+  
+  // Estado publicación
+  publishStatus     PortalMediaSyncStatus @default(PENDING)
+  publishedAt       DateTime?
+  removedAt         DateTime?
+  publishError      String?
+  
+  // Sincronización
+  lastSyncAt        DateTime?
+  syncCount         Int         @default(0)
+  
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  
+  // Relaciones
+  mediaAsset        PropertyMedia              @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+  credential        IntegrationCredential      @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  expedient         Expedient                  @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  
+  @@unique([mediaAssetId, credentialId])
+  @@index([expedientId])
+  @@index([portalMediaId])
+  @@map("portal_media_references")
+}
+
+// ─── Modelo Media Sync Log ──────────────────────────────────────────────────
+
+model MediaSyncLog {
+  id                String      @id @default(cuid())
+  
+  mediaAssetId      String?
+  credentialId      String
+  expedientId       String
+  
+  // Acción
+  action            MediaSyncAction
+  status            MediaSyncLogStatus
+  
+  // Detalles
+  portalResponse    Json?
+  errorMessage      String?
+  errorCode         String?
+  
+  // Timing
+  startedAt         DateTime    @default(now())
+  completedAt       DateTime?
+  duration          Int?
+  
+  // Auditoría
+  triggeredBy       String?
+  metadata          Json?
+  
+  // Relaciones
+  mediaAsset        PropertyMedia?              @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
+  credential        IntegrationCredential       @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  expedient         Expedient                   @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  
+  @@index([mediaAssetId])
+  @@index([credentialId])
+  @@index([status])
+  @@map("media_sync_logs")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NUEVOS MODELOS — FASE 1 (Reporting, Búsqueda, Chat, Seguridad, Productividad)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── REPORTING ─────────────────────────────────────────────────────────────────
+
+model Report {
+  id           String       @id @default(cuid())
+  name         String
+  type         ReportType
+  format       ReportFormat
+  createdById  String
+  generatedAt  DateTime     @default(now())
+  fileUrl      String?      // S3 path o local path
+  fileSize     Int?         // en bytes
+  filters      Json?        // filtros aplicados al generar el reporte
+  description  String?
+  isScheduled  Boolean      @default(false)
+  createdAt    DateTime     @default(now())
+  expiresAt    DateTime?    // para limpiar reportes antiguos
+
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([createdById])
+  @@index([type])
+  @@index([createdAt])
+  @@map("reports")
+}
+
+model Commission {
+  id             String   @id @default(cuid())
+  expedientId    String
+  userId         String   // comercial
+  amount         Decimal  @db.Decimal(12, 2)
+  percentage     Decimal  @db.Decimal(5, 2)
+  calculatedAt   DateTime @default(now())
+  invoiced       Boolean  @default(false)
+  invoicedAt     DateTime?
+  paid           Boolean  @default(false)
+  paidAt         DateTime?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  expedient      Expedient  @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expedientId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("commissions")
+}
+
+// ─── BÚSQUEDA ──────────────────────────────────────────────────────────────────
+
+model SavedSearch {
+  id           String   @id @default(cuid())
+  userId       String
+  name         String
+  filters      Json     // { search, operationType, status, phase, etc }
+  searchText   String?  // para full-text
+  isDefault    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@map("saved_searches")
+}
+
+model SearchIndex {
+  id           String   @id @default(cuid())
+  expedientId  String?
+  clientId     String?
+  searchText   String   @db.Text // concatenado: address, cliente, notas, tags
+  indexed      DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  expedient    Expedient?  @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  client       Client?     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([searchText])
+  @@index([expedientId])
+  @@index([clientId])
+  @@map("search_indexes")
+}
+
+// ─── CHAT & COLABORACIÓN ───────────────────────────────────────────────────────
+
+model ChatThread {
+  id             String   @id @default(cuid())
+  expedientId    String
+  clientId       String?
+  subject        String
+  createdById    String
+  lastMessageAt  DateTime?
+  archivedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  expedient      Expedient       @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  client         Client?         @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  createdBy      User            @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  messages       ChatMessage[]
+  participants   ChatParticipant[]
+
+  @@index([expedientId])
+  @@index([createdAt])
+  @@map("chat_threads")
+}
+
+model ChatMessage {
+  id             String   @id @default(cuid())
+  threadId       String
+  userId         String
+  content        String   @db.Text
+  mentions       String[] @default([]) // userIds mencionados
+  attachments    Json?    // { filename, path, mimeType }
+  edited         Boolean  @default(false)
+  editedAt       DateTime?
+  createdAt      DateTime @default(now())
+
+  thread         ChatThread  @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([threadId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("chat_messages")
+}
+
+model ChatParticipant {
+  id             String   @id @default(cuid())
+  threadId       String
+  userId         String
+  unreadCount    Int      @default(0)
+  lastReadAt     DateTime?
+  joinedAt       DateTime @default(now())
+
+  thread         ChatThread  @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([threadId, userId])
+  @@map("chat_participants")
+}
+
+model DetailedActivityLog {
+  id             String   @id @default(cuid())
+  expedientId    String?
+  clientId       String?
+  userId         String
+  entityType     String   // Expedient, Document, Signature, Task, etc
+  entityId       String
+  action         AuditAction
+  fieldChanged   String?  // para UPDATED
+  oldValue       String?  // para UPDATED
+  newValue       String?  // para UPDATED
+  description    String?
+  ipAddress      String?
+  userAgent      String?
+  metadata       Json?
+  timestamp      DateTime @default(now())
+
+  expedient      Expedient? @relation(fields: [expedientId], references: [id], onDelete: SetNull)
+  client         Client?    @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expedientId])
+  @@index([clientId])
+  @@index([userId])
+  @@index([action])
+  @@index([timestamp])
+  @@map("detailed_activity_logs")
+}
+
+// ─── GESTIÓN DE CLIENTES ───────────────────────────────────────────────────────
+
+model ClientSegment {
+  id             String   @id @default(cuid())
+  clientId       String   @unique
+  segment        ClientSegmentStatus
+  score          Decimal  @db.Decimal(5, 2) // 0-100
+  valueEstimate  Decimal? @db.Decimal(15, 2) // ingresos potenciales
+  lastCalculated DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  client         Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([segment])
+  @@map("client_segments")
+}
+
+model ClientReferral {
+  id                String   @id @default(cuid())
+  referrerClientId  String
+  referredClientId  String
+  notes             String?
+  closedExpedients  Int      @default(0) // contador de expedientes cerrados
+  value             Decimal? @db.Decimal(15, 2) // valor total comisiones de referidos
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  referrerClient    Client   @relation("ReferrerClient", fields: [referrerClientId], references: [id], onDelete: Cascade)
+  referredClient    Client   @relation("ReferredClient", fields: [referredClientId], references: [id], onDelete: Cascade)
+
+  @@unique([referrerClientId, referredClientId])
+  @@map("client_referrals")
+}
+
+// Relación existente en Client ampliada
+// Necesita actualización en Client model para soportar:
+// referredBy         ClientReferral[] @relation("ReferrerClient")
+// referredClients    ClientReferral[] @relation("ReferredClient")
+
+// ─── SEGURIDAD & AUDITORÍA ────────────────────────────────────────────────────
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  userId         String
+  action         AuditAction
+  resourceType   String   // Expedient, Client, Document, User, etc
+  resourceId     String
+  changes        Json?    // { fieldName: { old: value, new: value } }
+  ipAddress      String?
+  userAgent      String?
+  timestamp      DateTime @default(now())
+
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([resourceType])
+  @@index([timestamp])
+  @@map("audit_logs")
+}
+
+model DocumentEncryption {
+  id             String   @id @default(cuid())
+  documentId     String   @unique
+  encryptedAt    DateTime @default(now())
+  accessList     String[] @default([]) // userIds que pueden desencriptar
+  metadata       Json?    // { algorithm: "AES-256", version: 1 }
+
+  document       Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("document_encryptions")
+}
+
+model BackupLog {
+  id             String   @id @default(cuid())
+  type           String   @default("AUTOMATIC") // AUTOMATIC, MANUAL
+  status         String   @default("PENDING") // PENDING, COMPLETED, FAILED
+  startedAt      DateTime @default(now())
+  completedAt    DateTime?
+  fileSize       BigInt?  // en bytes
+  s3Path         String?
+  errorMessage   String?
+  retentionDays  Int      @default(30)
+
+  @@index([type])
+  @@index([status])
+  @@index([startedAt])
+  @@map("backup_logs")
+}
+
+model UserSession {
+  id             String   @id @default(cuid())
+  userId         String
+  token          String   // JWT hash o session ID
+  status         UserSessionStatus @default(ACTIVE)
+  loginAt        DateTime @default(now())
+  lastActivityAt DateTime @updatedAt
+  expiresAt      DateTime
+  ipAddress      String?
+  userAgent      String?
+  metadata       Json?    // { browser, os, device }
+
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("user_sessions")
+}
+
+// ─── PRODUCTIVIDAD ────────────────────────────────────────────────────────────
+
+model UserPreference {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  shortcuts      Json?    // { "ctrl+e": "CREATE_EXPEDIENT", "ctrl+shift+s": "SEARCH" }
+  mfaEnabled     Boolean  @default(false)
+  mfaSecret      String?  // TOTP secret (encrypted)
+  mfaMethod      String   @default("TOTP") // TOTP, SMS
+  notificationPreferences Json? // { email: true, inApp: true, sms: false }
+  defaultFilters Json?    // filtros que aplica automáticamente
+  theme          String   @default("LIGHT") // LIGHT, DARK
+  timezone       String   @default("Europe/Madrid")
+  language       String   @default("es")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
+}
+
+model BulkAction {
+  id             String   @id @default(cuid())
+  userId         String
+  type           BulkActionType
+  status         BulkActionStatus @default(PENDING)
+  expedientIds   String[] // array de IDs a actualizar
+  parameters     Json     // { phase: "ACUERDO", assignedTo: "userId", tags: ["urgente"] }
+  totalCount     Int      @default(0)
+  successCount   Int      @default(0)
+  failureCount   Int      @default(0)
+  errorLog       String?
+  startedAt      DateTime @default(now())
+  completedAt    DateTime?
+
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@map("bulk_actions")
+}
+
+// ─── DATOS & INTELIGENCIA ──────────────────────────────────────────────────────
+
+model PropertyMarketData {
+  id             String   @id @default(cuid())
+  city           String
+  zone           String
+  propertyType   String   // RESIDENTIAL, COMMERCIAL, INDUSTRIAL
+  avgPrice       Decimal  @db.Decimal(15, 2)
+  avgPricePerSqm Decimal  @db.Decimal(10, 2)
+  trendPercentage Decimal @db.Decimal(5, 2) // month-over-month
+  saleCount      Int      @default(0)
+  rentalCount    Int      @default(0)
+  lastUpdated    DateTime @default(now())
+  source         String?  // idealist, portal, internal
+  dataDate       DateTime // fecha a la que corresponden los datos
+
+  @@unique([city, zone, propertyType])
+  @@index([city])
+  @@index([lastUpdated])
+  @@map("property_market_data")
+}
+
+// ─── AI/ML (Phase 2) ───────────────────────────────────────────────────────────
+
+model ClientPrediction {
+  id                    String   @id @default(cuid())
+  clientId              String   @unique
+  annualValueForecast   Decimal  @db.Decimal(12, 2)
+  closureProbability    Int      // 0-100
+  recommendations       String[] // JSON array
+  riskFactors          String[] // JSON array
+  recommendedSegment   String   // VIP, NORMAL, RIESGO
+  generatedAt          DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  client               Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@map("client_predictions")
+}
+
+model DormantClientAnalysis {
+  id                  String   @id @default(cuid())
+  clientId            String
+  inactiveDays        Int
+  reactivationReason  String
+  reactivationPriority Int      // 1-10
+  reactivationStrategy String
+  reactivationMessage String?
+  immediateActions    String[] // JSON array
+  analyzedAt          DateTime @default(now())
+
+  client              Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@map("dormant_client_analyses")
+}
+
+model ExpedientRecommendation {
+  id                  String   @id @default(cuid())
+  expedientId         String   @unique
+  immediateActions    String[] // JSON array
+  risks               String[] // JSON array
+  optimizations       String[] // JSON array
+  estimatedDaysToClose Int
+  healthScore         Int      // 0-100
+  generatedAt         DateTime @default(now())
+
+  expedient           Expedient @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+
+  @@map("expedient_recommendations")
+}
+
+model DocumentAnalysis {
+  id                  String   @id @default(cuid())
+  documentId          String   @unique
+  detectedType        String
+  extractedData       Json     // JSON de datos extraídos
+  completeness        Int      // 0-100
+  alerts              String[] // JSON array
+  recommendedAction   String
+  confidence          Int      // 0-100
+  analyzedAt          DateTime @default(now())
+
+  document            Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("document_analyses")
+}
+
+model AITemplate {
+  id                  String   @id @default(cuid())
+  expedientId         String
+  templateType        String   // CONTRATO, OFERTA, PROPUESTA, etc
+  title               String
+  content             String   // HTML
+  variables           String[] // Lista de variables
+  description         String?
+  generatedAt         DateTime @default(now())
+
+  expedient           Expedient @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+
+  @@map("ai_templates")
+}
+
+// ─── MOBILE (Pospuesto Fase 2) ─────────────────────────────────────────────────
+
+model DeviceRegistration {
+  id             String   @id @default(cuid())
+  userId         String
+  deviceToken    String   // FCM o APNS token
+  platform       PlatformType
+  deviceName     String?  // iPhone 12, Samsung Galaxy, etc
+  appVersion     String?
+  osVersion      String?
+  registeredAt   DateTime @default(now())
+  lastUsedAt     DateTime?
+  isActive       Boolean  @default(true)
+
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, deviceToken])
+  @@index([userId])
+  @@map("device_registrations")
+}
+
+// ─── ROLES Y COLABORADORES ─────────────────────────────────────────────────────
+
+model UserRoleAssignment {
+  id        String   @id @default(cuid())
+  userId    String
+  role      UserRole
+  assignedAt DateTime @default(now())
+  assignedBy String?  // ID del usuario que asignó el rol
+
+  user      User     @relation("userRoles", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role])
+  @@index([userId])
+  @@map("user_role_assignments")
+}
+
+model ExpedientCollaborator {
+  id              String              @id @default(cuid())
+  expedientId     String
+  userId          String
+  collaboratorRole CollaboratorRole   // ASIGNADO, CO_RESPONSABLE, REVISOR, OBSERVADOR
+  addedAt         DateTime            @default(now())
+  addedBy         String?             // ID del usuario que añadió el colaborador
+  notes           String?             // Notas sobre el rol del colaborador
+
+  expedient       Expedient           @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  user            User                @relation("expedientCollaborations", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([expedientId, userId])
+  @@index([expedientId])
+  @@index([userId])
+  @@map("expedient_collaborators")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FIN NUEVOS MODELOS
+// ═══════════════════════════════════════════════════════════════════════════════

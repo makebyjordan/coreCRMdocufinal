@@ -1,3 +1,4 @@
+const { isAdmin, isCommercial, userHasAnyRole } = require('../utils/roleHelper');
 /**
  * ClientNotes Controller
  * Gestión de notas estructuradas de clientes
@@ -81,7 +82,7 @@ async function update(req, res) {
   }
 
   // Verificar permisos: solo autor o ADMIN
-  if (existing.authorId !== req.user.id && req.user.role !== 'ADMINISTRACION' && req.user.role !== 'DIRECCION') {
+  if (existing.authorId !== req.user.id && !userHasAnyRole(req.user, 'ADMINISTRACION') && !userHasAnyRole(req.user, 'DIRECCION')) {
     return res.status(403).json({ error: 'No tienes permisos para editar esta nota' });
   }
 
@@ -112,7 +113,7 @@ async function remove(req, res) {
   }
 
   // Verificar permisos: solo autor o ADMIN
-  if (existing.authorId !== req.user.id && req.user.role !== 'ADMINISTRACION' && req.user.role !== 'DIRECCION') {
+  if (existing.authorId !== req.user.id && !userHasAnyRole(req.user, 'ADMINISTRACION') && !userHasAnyRole(req.user, 'DIRECCION')) {
     return res.status(403).json({ error: 'No tienes permisos para eliminar esta nota' });
   }
 

@@ -7,6 +7,7 @@ import {
   FolderOpen, FileText, Bell, Users, History, RefreshCw,
   Pencil, Save, X, Plus, Edit2, Trash2, PenSquare, ExternalLink, Mail,
   LayoutDashboard, Clock, Link2, Calculator, Calendar as CalIcon,
+  Images, MessageSquare,
 } from 'lucide-react'
 import api from '../api/client'
 import ChecklistPanel from '../components/Checklist/ChecklistPanel'
@@ -19,6 +20,9 @@ import OperationTimeline from '../components/Expedients/OperationTimeline'
 import LinkedExpedientsPanel from '../components/Expedients/LinkedExpedientsPanel'
 import FinancialSimulator from '../components/Expedients/FinancialSimulator'
 import CombinedFinancialCalculator from '../components/Expedients/CombinedFinancialCalculator'
+import MediaGalleryPanel from '../components/Expedients/MediaGalleryPanel'
+import CollaboratorsPanel from '../components/Expedients/CollaboratorsPanel'
+
 const TABS = [
   { id: 'dashboard', label: 'Estado', icon: LayoutDashboard },
   { id: 'checklist', label: 'Checklist', icon: CheckCircle },
@@ -26,6 +30,8 @@ const TABS = [
   { id: 'visits', label: 'Visitas', icon: Users },
   { id: 'signatures', label: 'Firmas', icon: PenSquare },
   { id: 'documents', label: 'Documentos', icon: FileText },
+  { id: 'collaborators', label: 'Colaboradores', icon: Users },
+  { id: 'media', label: 'Galería', icon: Images },
   { id: 'alerts', label: 'Alertas', icon: AlertTriangle },
   { id: 'timeline', label: 'Timeline', icon: Clock },
   { id: 'linked', label: 'Vinculados', icon: Link2 },
@@ -321,6 +327,13 @@ export default function ExpedientDetailPage() {
               <CheckCircle size={15} /> Cerrar operación
             </button>
           )}
+          <button
+            onClick={() => navigate(`/chat?expedientId=${id}&subject=${encodeURIComponent(`Exp. ${exp.code}`)}`)}
+            className="btn-secondary"
+            title="Abrir chat del equipo para este expediente"
+          >
+            <MessageSquare size={15} /> Chat
+          </button>
           {exp.driveFolder && (
             <a href={`https://drive.google.com/drive/folders/${exp.driveFolderId}`} target="_blank" rel="noreferrer"
               className="btn-secondary">
@@ -358,6 +371,8 @@ export default function ExpedientDetailPage() {
         {tab === 'signatures'    && <SignaturesPanel expedientId={id} pendingSignDoc={pendingSignDoc} setPendingSignDoc={setPendingSignDoc} />}
         {tab === 'checklist'     && <ChecklistPanel expedientId={id} />}
         {tab === 'documents'     && <DocumentPanel expedientId={id} currentPhase={exp.currentPhase} operationType={exp.operationType} onRequestSign={(doc) => { setPendingSignDoc(doc); handleTabChange('signatures') }} />}
+        {tab === 'collaborators' && <div className="p-6"><CollaboratorsPanel expedientId={id} /></div>}
+        {tab === 'media'         && <MediaGalleryPanel expedientId={id} />}
         {tab === 'alerts'        && <AlertsPanel exp={exp} expedientId={id} />}
         {tab === 'timeline'      && <OperationTimeline exp={exp} />}
         {tab === 'linked'        && <LinkedExpedientsPanel expedientId={id} />}

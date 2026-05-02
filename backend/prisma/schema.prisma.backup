@@ -1,0 +1,870 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  COMERCIAL
+  FIRMAS
+  MARKETING
+  DIRECCION
+  ADMINISTRACION
+}
+
+enum ClientType {
+  INQUILINO
+  PROPIETARIO
+  COMPRADOR
+  VENDEDOR
+  INVERSOR
+  EMPRESA
+}
+
+enum OperationType {
+  ALQUILER
+  VENTA
+  COMPRA
+  INVERSION
+  PROMOCION
+  EDIFICIO
+  RESORT
+  INQUILINO
+  PROPIETARIO
+  INVERSION_HOLDERS
+}
+
+enum OperationSize {
+  INDIVIDUAL
+  GRANDE
+}
+
+// Phase is now a String to allow custom values from settings
+// Standard values: CAPTACION, VALORACION, FORMULARIO, DOCUMENTACION, VALIDACION, ACUERDO, MARKETING_FORMULARIO, MARKETING_EJECUCION, VISITAS, PREVENTA, BUSQUEDA_ACTIVA, NEGOCIACION, ACUERDO_INTERESADO, ARRAS, HIPOTECA, NOTARIA, CIERRE, POSVENTA, CERRADO, CANCELADO, BLOQUEADO
+
+enum ExpedientStatus {
+  ACTIVO
+  COMPLETADO
+  CANCELADO
+  BLOQUEADO
+}
+
+enum DocumentStatus {
+  PENDIENTE
+  VALIDADO
+  RECHAZADO
+}
+
+enum SignatureStatus {
+  PENDIENTE
+  ENVIADO
+  EN_PROGRESO
+  FIRMADO
+  FIRMADO_COMPLETO
+  RECHAZADO
+  CANCELADO
+  EXPIRADO
+}
+
+enum NotificationType {
+  APERTURA_EXPEDIENTE
+  FASE_COMPLETADA
+  BLOQUEO_DETECTADO
+  OPERACION_CERRADA
+  POSVENTA_3_MESES
+  POSVENTA_6_MESES
+  POSVENTA_12_MESES
+}
+
+enum NotificationStatus {
+  PENDIENTE
+  ENVIADO
+  FALLIDO
+}
+
+// ─── Modelos ──────────────────────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  password  String
+  role      UserRole
+  phone     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignments          ExpedientAssignment[]
+  uploadedDocuments    Document[]
+  notifications        Notification[]
+  phaseChanges         PhaseHistory[]
+  calendarEvents       CalendarEvent[]
+  documentValidations  DocumentValidation[]
+  expedientLinks       ExpedientLink[]
+  clientNotes          ClientNote[]
+  clientCommunications ClientCommunication[]
+  tasksAssigned        Task[]           @relation("AssignedTasks")
+  tasksCreated         Task[]           @relation("CreatedTasks")
+  activityEvents       ActivityEvent[]
+  documentExpedientLinks DocumentExpedientLink[]
+  clientRelationsLinked ClientRelation[] @relation("LinkedBy")
+  createdWorkflowRules WorkflowRule[]
+  uploadedMedia        PropertyMedia[]
+
+  @@map("users")
+}
+
+model Client {
+  id                String     @id @default(cuid())
+  type              ClientType
+  firstName         String?
+  lastName          String?
+  dni               String?    @unique
+  companyName       String?
+  nif               String?
+  contactPerson     String?
+  email             String
+  phone             String
+  phone2            String?
+  address           String?
+  city              String?
+  postalCode        String?
+  province          String?
+  privacyPolicy     Boolean    @default(false)
+  privacyDate       DateTime?
+  notes             String?
+  active            Boolean    @default(true)
+  firstContactDate  DateTime   @default(now())
+  lastContactDate   DateTime?
+  source            String?    // IDEALISTA | WEB | RECOMENDACION | COLD_CALL | REFERIDO | OTROS
+  score             String     @default("FRIO") // FRIO | TIBIO | CALIENTE | HOT
+  lifecycleStage    String     @default("LEAD") // LEAD | PROSPECTO | ACTIVO | RECURRENTE | PERDIDO
+  tags              String[]   @default([])
+  birthDate         DateTime?
+  preferences       Json?      // { budgetMin, budgetMax, zones: [], rooms, m2Min, operationTypes: [] }
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  expedients        Expedient[]
+  roles             ExpedientClient[]
+  calendarEvents    CalendarEvent[]
+  journey           ClientJourney?
+  notesStructured   ClientNote[]
+  tasks             Task[]
+  communications    ClientCommunication[]
+  activityEvents    ActivityEvent[]
+  ownedDocuments    Document[]       @relation("ClientDocuments")
+  relationsA        ClientRelation[] @relation("ClientRelationsA")
+  relationsB        ClientRelation[] @relation("ClientRelationsB")
+
+  @@map("clients")
+}
+
+model Expedient {
+  id            String          @id @default(cuid())
+  code          String          @unique
+  clientId      String
+  operationType OperationType
+  operationSize OperationSize   @default(INDIVIDUAL)
+  currentPhase  String           @default("CAPTACION")
+  status        ExpedientStatus @default(ACTIVO)
+
+  propertyAddress String?
+  propertyCity    String?
+  propertyRef     String?
+  propertyPrice   Decimal?  @db.Decimal(12, 2)
+  propertyM2      Decimal?  @db.Decimal(8, 2)
+  propertyRooms   Int?
+  propertyBaths   Int?
+
+  driveFolder   String?
+  driveFolderId String?
+
+  exclusivityStart  DateTime?
+  exclusivityMonths Int?      @default(3)
+  exclusivityEnd    DateTime?
+
+  openedAt      DateTime  @default(now())
+  closedAt      DateTime?
+  postventa3At  DateTime?
+  postventa6At  DateTime?
+  postventa12At DateTime?
+
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Nuevos campos
+  propertyCatastral   String?
+  propertyYear        Int?
+  propertyStatus      String?
+  propertyOrientation String?
+  propertyParking     Boolean   @default(false)
+  propertyStorage     Boolean   @default(false)
+  commissionFixed     Decimal?  @db.Decimal(12, 2)
+  commissionPercent   Decimal?  @db.Decimal(5, 2)
+  commissionInvoiced  Boolean   @default(false)
+  commissionPaid      Boolean   @default(false)
+  mortgageStatus      String?
+  mortgageEntity      String?
+
+  // Arras y Notaría
+  arrasAmount         Decimal?  @db.Decimal(12, 2)
+  arrasDeadline       DateTime?
+  notaryName          String?
+  notaryDate          DateTime?
+  notaryAddress       String?
+
+  // Valoración
+  valuationEstimated   Decimal?  @db.Decimal(12, 2)
+  valuationMarketNotes String?
+
+  // Expedientes vinculados (captación ↔ venta, propietario ↔ inquilino)
+  parentExpedientId   String?
+  expedientRole       String?   // "CAPTACION" | "VENTA" | "COMPRA" | "PROPIETARIO" | "INQUILINO"
+
+  // Gastos de operación (notaría, registro, impuestos)
+  notaryFees          Decimal?  @db.Decimal(10, 2)
+  registryFees        Decimal?  @db.Decimal(10, 2)
+  taxesAmount         Decimal?  @db.Decimal(10, 2)
+
+  // Sistema de vinculaciones avanzadas
+  linkedOperationType String?   // "PERMUTA" | "CADENA" | "CONDICIONADO" | "RELACIONADO"
+  dependencyStatus    String?   // "INDEPENDIENTE" | "BLOQUEADO_LINK" | "CONDICIONADO" | "DESBLOQUEADO"
+  advanceConditions   Json?     // { "requiresExpedient": "id", "minPhase": "ARRAS" }
+
+  client         Client                @relation(fields: [clientId], references: [id])
+  clientRoles    ExpedientClient[]
+  assignments    ExpedientAssignment[]
+  checklists     ChecklistInstance[]
+  documents      Document[]
+  signatures     Signature[]
+  notifications  Notification[]
+  phaseHistory   PhaseHistory[]
+  buyers         Buyer[]
+  visits         Visit[]
+  calendarEvents CalendarEvent[]
+  tasks          Task[]
+  communications ClientCommunication[]
+  activityEvents ActivityEvent[]
+  documentExpedientLinks DocumentExpedientLink[]
+  propertyMedia  PropertyMedia[]
+
+  // Jerarquía simple (captación padre / venta hijo)
+  parentExpedient Expedient?  @relation("ExpedientHierarchy", fields: [parentExpedientId], references: [id])
+  childExpedients Expedient[] @relation("ExpedientHierarchy")
+
+  // Vinculaciones avanzadas (muchos a muchos)
+  outgoingLinks   ExpedientLink[] @relation("ExpedientLinks")
+  incomingLinks   ExpedientLink[] @relation("LinkedExpedients")
+
+  @@map("expedients")
+}
+
+// ─── Vinculaciones entre expedientes ─────────────────────────────────────────
+model ExpedientLink {
+  id                String   @id @default(cuid())
+  expedientId       String
+  linkedExpedientId String
+  linkType          String   // "VENDE_PARA_COMPRAR" | "COMPRA_PARA_VENDER" | "PERMUTA_MUTUA" | "CADENA" | "RELACIONADO"
+  linkDirection     String   @default("UNIDIRECCIONAL") // "BIDIRECCIONAL" | "UNIDIRECCIONAL"
+  condition         String?  // Descripción libre de la condición
+  isBlocking        Boolean  @default(false)
+  requiredPhase     String?  // Fase mínima requerida del expediente vinculado
+  notes             String?
+  createdBy         String
+  createdAt         DateTime @default(now())
+
+  expedient       Expedient @relation("ExpedientLinks",   fields: [expedientId],       references: [id], onDelete: Cascade)
+  linkedExpedient Expedient @relation("LinkedExpedients", fields: [linkedExpedientId], references: [id], onDelete: Cascade)
+  creator         User      @relation(fields: [createdBy], references: [id])
+
+  @@unique([expedientId, linkedExpedientId])
+  @@map("expedient_links")
+}
+
+// ─── Journey del cliente a través de expedientes ─────────────────────────────
+model ClientJourney {
+  id         String   @id @default(cuid())
+  clientId   String   @unique
+  expedients Json     @default("[]")
+  totalValue Decimal? @db.Decimal(15, 2)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@map("client_journeys")
+}
+
+model ExpedientClient {
+  id          String   @id @default(cuid())
+  expedientId String
+  clientId    String
+  role        String   // VENDEDOR, COMPRADOR, PROPIETARIO, INQUILINO, GARANTE, REPRESENTANTE
+  createdAt   DateTime @default(now())
+
+  expedient Expedient @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  client    Client    @relation(fields: [clientId], references: [id])
+
+  @@unique([expedientId, clientId, role])
+  @@map("expedient_clients")
+}
+
+model Visit {
+  id              String   @id @default(cuid())
+  expedientId     String
+  date            DateTime @default(now())
+  visitorName     String
+  visitorPhone    String?
+  feedback        String?
+  interestLevel   String   @default("MID") // LOW, MID, HIGH
+  calendarEventId String?  @unique
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  expedient     Expedient     @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  calendarEvent CalendarEvent? @relation(fields: [calendarEventId], references: [id])
+
+  @@map("visits")
+}
+
+model ExpedientAssignment {
+  id          String   @id @default(cuid())
+  expedientId String
+  userId      String
+  role        UserRole
+  isPrimary   Boolean  @default(false)
+  commissionSplit Decimal? @db.Decimal(5, 2)
+  createdAt   DateTime @default(now())
+
+  expedient Expedient @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@unique([expedientId, role, userId])
+  @@map("expedient_assignments")
+}
+
+model PhaseHistory {
+  id          String    @id @default(cuid())
+  expedientId String
+  fromPhase   String?
+  toPhase     String
+  changedById String?
+  notes       String?
+  createdAt   DateTime  @default(now())
+
+  expedient Expedient @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  changedBy User?     @relation(fields: [changedById], references: [id])
+
+  @@map("phase_history")
+}
+
+model Buyer {
+  id          String   @id @default(cuid())
+  expedientId String
+  name        String
+  email       String
+  phone       String
+  offer       Decimal? @db.Decimal(12, 2)
+  notes       String?
+  accepted    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  expedient Expedient @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+
+  @@map("buyers")
+}
+
+model ChecklistTemplate {
+  id            String        @id @default(cuid())
+  name          String
+  operationType OperationType
+  operationSize OperationSize @default(INDIVIDUAL)
+  clientType    ClientType?
+  phase         String
+  description   String?
+  active        Boolean       @default(true)
+  order         Int           @default(0)
+  createdAt     DateTime      @default(now())
+
+  items     ChecklistTemplateItem[]
+  instances ChecklistInstance[]
+
+  @@map("checklist_templates")
+}
+
+model ChecklistTemplateItem {
+  id          String  @id @default(cuid())
+  templateId  String
+  label       String
+  description String?
+  required    Boolean @default(true)
+  order       Int
+
+  template ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@map("checklist_template_items")
+}
+
+model ChecklistInstance {
+  id          String    @id @default(cuid())
+  expedientId String
+  templateId  String
+  phase       String
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  expedient Expedient              @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  template  ChecklistTemplate      @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  items     ChecklistInstanceItem[]
+
+  @@map("checklist_instances")
+}
+
+model ChecklistInstanceItem {
+  id          String    @id @default(cuid())
+  instanceId  String
+  label       String
+  description String?
+  required    Boolean   @default(true)
+  completed   Boolean   @default(false)
+  notes       String?
+  completedAt DateTime?
+  completedBy String?
+  order       Int
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  instance ChecklistInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@map("checklist_instance_items")
+}
+
+model Document {
+  id             String         @id @default(cuid())
+  expedientId    String
+  ownerClientId  String?
+  uploadedById   String?
+  name           String
+  docType        String
+  phase          String
+  status         DocumentStatus @default(PENDIENTE)
+  driveFileId    String?
+  driveUrl       String?
+  filePath       String?
+  fileSize       Int?
+  mimeType       String?
+  notes          String?
+  rejectedReason String?
+  validatedAt    DateTime?
+  version        Int            @default(1)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  // Vínculo con plantilla origen
+  sourceTemplateId String?
+  sourceTemplate   BaseDocument? @relation("TemplateSource", fields: [sourceTemplateId], references: [id], onDelete: SetNull)
+
+  // Datos usados al generar
+  templateData     Json?      // snapshot de los valores usados
+  isGenerated      Boolean    @default(false)
+  contentHtml      String?    @db.Text  // versión editable en HTML
+
+  // Firma (placeholder para integración futura con proveedor externo)
+  signatureStatus  String?    // "NO_REQUIERE" | "PENDIENTE" | "PARCIALMENTE_FIRMADO" | "FIRMADO_COMPLETO"
+
+  expedient     Expedient            @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  ownerClient   Client?              @relation("ClientDocuments", fields: [ownerClientId], references: [id], onDelete: SetNull)
+  uploadedBy    User?                @relation(fields: [uploadedById], references: [id])
+  validations   DocumentValidation[]
+  expedientLinks DocumentExpedientLink[]
+  signatures    Signature[]
+
+  @@map("documents")
+}
+
+model DocumentValidation {
+  id          String   @id @default(cuid())
+  documentId  String
+  validatedBy String
+  validatedAt DateTime @default(now())
+  status      String   // "APROBADO" | "RECHAZADO" | "REQUIERE_CAMBIOS"
+  comments    String?
+  expiryDate  DateTime?
+  createdAt   DateTime @default(now())
+
+  document  Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  validator User     @relation(fields: [validatedBy], references: [id])
+
+  @@map("document_validations")
+}
+
+model Signature {
+  id              String          @id @default(cuid())
+  expedientId     String
+  documentName    String          // denormalizado, nombre del documento en el momento de crear
+  signerName      String?         // retrocompat: primer firmante
+  signerEmail     String?         // retrocompat: primer firmante
+  signerRole      String?         // retrocompat: primer firmante
+  status          SignatureStatus  @default(PENDIENTE)
+  externalId      String?
+  signUrl         String?
+  signedAt        DateTime?
+  expiresAt       DateTime?
+  reminderSent    Boolean         @default(false)
+  calendarEventId String?         @unique
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relación con documento del expediente
+  documentId      String?
+  document        Document?       @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  // DocuSign
+  provider           String?      // "DOCUSIGN"
+  envelopeId         String?      @unique
+  signingOrder       String       @default("PARALLEL")  // "PARALLEL" | "SEQUENTIAL"
+  signedDocumentPath String?      // ruta local al PDF firmado descargado del proveedor
+
+  expedient     Expedient     @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  calendarEvent CalendarEvent? @relation(fields: [calendarEventId], references: [id])
+  signers       SignatureSigner[]
+
+  @@map("signatures")
+}
+
+model SignatureSigner {
+  id              String    @id @default(cuid())
+  signatureId     String
+  name            String
+  email           String
+  role            String    // "AGENTE" | "COMPRADOR" | "VENDEDOR" | "PROPIETARIO" | "INQUILINO" | "AVALISTA" | "CONYUGE" | "OTRO"
+  routingOrder    Int       @default(1)
+  status          String    @default("PENDIENTE")  // "PENDIENTE" | "ENVIADO" | "FIRMADO" | "RECHAZADO"
+  signedAt        DateTime?
+  declinedAt      DateTime?
+  declinedReason  String?
+  recipientId     String?   // ID del recipient en DocuSign para mapear webhooks
+  createdAt       DateTime  @default(now())
+
+  signature Signature @relation(fields: [signatureId], references: [id], onDelete: Cascade)
+
+  @@index([signatureId])
+  @@map("signature_signers")
+}
+
+model EmailTemplate {
+  id        String           @id @default(cuid())
+  name      String
+  type      NotificationType
+  subject   String
+  bodyHtml  String
+  bodyText  String?
+  variables Json             @default("[]")
+  active    Boolean          @default(true)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@map("email_templates")
+}
+
+model CalendarEvent {
+  id          String   @id @default(cuid())
+  title       String
+  type        String   @default("REUNION")
+  startAt     DateTime
+  endAt       DateTime?
+  allDay      Boolean  @default(false)
+  notes       String?
+  clientId    String?
+  expedientId String?
+  visitId     String?  @unique
+  signatureId String?  @unique
+  taskId      String?  @unique
+  completed   Boolean  @default(false)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  client    Client?    @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  expedient Expedient? @relation(fields: [expedientId], references: [id], onDelete: SetNull)
+  visit     Visit?     @relation
+  signature Signature? @relation
+  task      Task?      @relation(fields: [taskId], references: [id])
+  createdBy User?      @relation(fields: [createdById], references: [id])
+
+  @@map("calendar_events")
+}
+
+model Notification {
+  id           String             @id @default(cuid())
+  expedientId  String?
+  userId       String?
+  type         NotificationType
+  status       NotificationStatus @default(PENDIENTE)
+  toEmail      String
+  toName       String?
+  subject      String
+  bodyHtml     String
+  scheduledFor DateTime?
+  sentAt       DateTime?
+  errorMessage String?
+  retries      Int                @default(0)
+  metadata     Json?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  expedient Expedient? @relation(fields: [expedientId], references: [id], onDelete: SetNull)
+  user      User?      @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+model BaseDocument {
+  id                String    @id @default(cuid())
+  name              String
+  category          String?   // VENTA, ALQUILER, GENERAL
+  driveUrl          String?
+  driveFileId       String?
+  localPath         String?
+  mimeType          String?
+  fileSize          Int?
+  
+  // Motor de plantillas
+  isTemplate        Boolean   @default(false)
+  templateFormat    String?   // "DOCX" | "HTML" | "PDF_FORM"
+  placeholders      Json?     // [{key: "cliente.nombre", label: "Nombre cliente", required: true}]
+  requiresSignature Boolean   @default(false)
+  signerRoles       Json?     // ["AGENTE", "CLIENTE_COMPRADOR", "CLIENTE_VENDEDOR"]
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relaciones
+  generatedDocuments Document[] @relation("TemplateSource")
+
+  @@map("base_documents")
+}
+
+// ─── Modelos FASE 1: Cliente 360 ─────────────────────────────────────────────
+
+model ClientNote {
+  id        String   @id @default(cuid())
+  clientId  String
+  authorId  String
+  content   String
+  pinned    Boolean  @default(false)
+  mentions  String[] @default([])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  author User   @relation(fields: [authorId], references: [id])
+
+  @@map("client_notes")
+}
+
+model ClientCommunication {
+  id          String   @id @default(cuid())
+  clientId    String
+  expedientId String?
+  channel     String   // EMAIL | PHONE | WHATSAPP | SMS | MEETING
+  direction   String   @default("OUTBOUND") // OUTBOUND | INBOUND
+  subject     String?
+  body        String?
+  templateId  String?
+  sentById    String?
+  sentAt      DateTime @default(now())
+  status      String   @default("SENT") // SENT | DELIVERED | OPENED | FAILED | PENDING
+  externalId  String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  client    Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  expedient Expedient? @relation(fields: [expedientId], references: [id], onDelete: SetNull)
+  sentBy    User?      @relation(fields: [sentById], references: [id])
+
+  @@map("client_communications")
+}
+
+model Task {
+  id              String    @id @default(cuid())
+  title           String
+  description     String?
+  clientId        String?
+  expedientId     String?
+  assignedToId    String?
+  createdById     String?
+  dueDate         DateTime?
+  completedAt     DateTime?
+  priority        String    @default("MEDIUM") // LOW | MEDIUM | HIGH
+  type            String    @default("OTRA") // LLAMAR | EMAIL | VISITA | REVISAR_DOC | FIRMAR | OTRA
+  calendarEventId String?   @unique
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  client        Client?       @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  expedient     Expedient?    @relation(fields: [expedientId], references: [id], onDelete: SetNull)
+  assignedTo    User?         @relation("AssignedTasks", fields: [assignedToId], references: [id])
+  createdBy     User?         @relation("CreatedTasks", fields: [createdById], references: [id])
+  calendarEvent CalendarEvent? @relation()
+
+  @@map("tasks")
+}
+
+model ActivityEvent {
+  id               String   @id @default(cuid())
+  clientId         String?
+  expedientId      String?
+  userId           String?
+  type             String   // CLIENT_CREATED, CLIENT_UPDATED, EXPEDIENT_CREATED, etc.
+  title            String
+  description      String?
+  metadata         Json?
+  relatedEntityType String?
+  relatedEntityId  String?
+  createdAt        DateTime @default(now())
+
+  client    Client?    @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  expedient Expedient? @relation(fields: [expedientId], references: [id], onDelete: SetNull)
+  user      User?      @relation(fields: [userId], references: [id])
+
+  @@index([clientId, createdAt(sort: Desc)])
+  @@index([expedientId, createdAt(sort: Desc)])
+  @@index([type, createdAt(sort: Desc)])
+  @@map("activity_events")
+}
+
+model ClientRelation {
+  id        String   @id @default(cuid())
+  clientAId String
+  clientBId String
+  linkedById String?
+  type      String   // FAMILIAR | AMIGO | SOCIA | REFERIDO_POR | REFIERE_A | OTRO
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clientA Client @relation("ClientRelationsA", fields: [clientAId], references: [id], onDelete: Cascade)
+  clientB Client @relation("ClientRelationsB", fields: [clientBId], references: [id], onDelete: Cascade)
+  linkedBy User?  @relation("LinkedBy", fields: [linkedById], references: [id])
+
+  @@unique([clientAId, clientBId, type])
+  @@map("client_relations")
+}
+
+model DocumentExpedientLink {
+  id          String   @id @default(cuid())
+  documentId  String
+  expedientId String
+  linkedAt    DateTime @default(now())
+  linkedById  String?
+
+  document Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  expedient Expedient @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  linkedBy  User?     @relation(fields: [linkedById], references: [id])
+
+  @@unique([documentId, expedientId])
+  @@map("document_expedient_links")
+}
+
+model WorkflowRule {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  active      Boolean  @default(true)
+  
+  // Condiciones (trigger)
+  triggerEvent String   // CLIENT_SCORE_CHANGED | CLIENT_STAGE_CHANGED | DAYS_SINCE_CONTACT | TASK_OVERDUE
+  conditions   Json?    // { score: "HOT", fromScore: "CALIENTE" } | { stage: "ACTIVO" } | { days: 7 }
+  
+  // Acciones
+  actions      Json     // [{ type: "CREATE_TASK", config: {...} }, { type: "SEND_NOTIFICATION", ... }]
+  
+  // Metadatos
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  lastRunAt   DateTime?
+  runCount    Int      @default(0)
+  
+  createdBy User? @relation(fields: [createdById], references: [id])
+  executions  WorkflowExecution[]
+  
+  @@index([triggerEvent, active])
+  @@map("workflow_rules")
+}
+
+model WorkflowExecution {
+  id          String   @id @default(cuid())
+  ruleId      String
+  clientId    String?
+  expedientId String?
+  status      String   @default("PENDING") // PENDING | RUNNING | COMPLETED | FAILED
+  input       Json?    // Datos que dispararon el workflow
+  output      Json?    // Resultado de las acciones
+  error       String?
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  rule WorkflowRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId, status])
+  @@index([clientId, createdAt])
+  @@map("workflow_executions")
+}
+
+// ─── Enums Multimedia ───────────────────────────────────────────────────────
+
+enum MediaType {
+  PHOTO
+  VIDEO
+  FLOOR_PLAN
+  TOUR_360
+  DOCUMENT_MKT
+}
+
+enum MediaStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+// ─── Modelo Multimedia para Galería ─────────────────────────────────────────
+
+model PropertyMedia {
+  id           String      @id @default(cuid())
+  expedientId  String
+  uploadedById String?
+  filename     String
+  originalName String
+  mimeType     String
+  fileSize     Int
+  filePath     String
+  type         MediaType   @default(PHOTO)
+  status       MediaStatus @default(ACTIVE)
+  title        String?
+  description  String?
+  order        Int         @default(0)
+  isCover      Boolean     @default(false)
+  portalSync   Json        @default("{}")
+  lastSyncAt   DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  expedient  Expedient @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  uploadedBy User?     @relation(fields: [uploadedById], references: [id])
+
+  @@index([expedientId, type])
+  @@index([expedientId, order])
+  @@map("property_media")
+}

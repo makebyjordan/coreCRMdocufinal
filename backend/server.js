@@ -7,6 +7,8 @@ const logger = require('./src/config/logger');
 const { prisma } = require('./src/config/db'); // Singleton PrismaClient
 const routes = require('./src/routes');
 const { startPostventaScheduler } = require('./src/jobs/postventa.scheduler');
+const { initializeRedis } = require('./src/config/redis');
+const { initializeSchedulers } = require('./src/config/scheduler');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -87,9 +89,13 @@ async function main() {
       logger.info(`Servidor CRM escuchando en http://localhost:${PORT}`);
     });
 
-    // Arrancar el scheduler de notificaciones de postventa
+    // Inicializar Redis (con fallback a in-memory si no está configurado)
+    await initializeRedis();
+
+    // Arrancar todos los schedulers
     startPostventaScheduler();
-    logger.info('Scheduler de postventa iniciado');
+    initializeSchedulers();
+    logger.info('Schedulers iniciados (postventa + segmentación + backup + forecast + reporting)');
   } catch (error) {
     logger.error('Error al iniciar el servidor:', error);
     process.exit(1);

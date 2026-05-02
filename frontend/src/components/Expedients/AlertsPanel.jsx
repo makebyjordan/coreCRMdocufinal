@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, AlertCircle, Info, CheckCircle, Clock, FileX, UserX, CalendarX, Link2, ShieldOff, ShieldCheck } from 'lucide-react'
 import api from '../../api/client'
 
@@ -273,11 +274,9 @@ function computeLinkedAlerts(linksData) {
   return { critical, important, info }
 }
 
-function AlertGroup({ title, color, bgColor, borderColor, icon: GroupIcon, items }) {
-  const navigate = useNavigate()
-  
+function AlertGroup({ title, color, bgColor, borderColor, icon: GroupIcon, items, navigate }) {
   if (items.length === 0) return null
-  
+
   const handleClick = (alert, e) => {
     const route = getAlertRoute(alert)
     if (route) {
@@ -337,6 +336,8 @@ function AlertGroup({ title, color, bgColor, borderColor, icon: GroupIcon, items
 }
 
 export default function AlertsPanel({ exp, expedientId }) {
+  const navigate = useNavigate()
+
   const { data: linksData } = useQuery({
     queryKey: ['links', expedientId],
     queryFn: () => api.get(`/expedients/${expedientId}/links`).then(r => r.data),
@@ -382,17 +383,17 @@ export default function AlertsPanel({ exp, expedientId }) {
       <AlertGroup
         title="Críticas — bloquean el avance"
         color="text-red-400" bgColor="bg-red-500/10" borderColor="border-red-500/30"
-        icon={AlertTriangle} items={critical}
+        icon={AlertTriangle} items={critical} navigate={navigate}
       />
       <AlertGroup
         title="Importantes"
         color="text-yellow-400" bgColor="bg-yellow-500/10" borderColor="border-yellow-500/30"
-        icon={AlertCircle} items={important}
+        icon={AlertCircle} items={important} navigate={navigate}
       />
       <AlertGroup
         title="Informativas"
         color="text-blue-400" bgColor="bg-blue-500/10" borderColor="border-blue-500/30"
-        icon={Info} items={info}
+        icon={Info} items={info} navigate={navigate}
       />
     </div>
   )

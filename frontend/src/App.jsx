@@ -13,7 +13,14 @@ import UsersPage from './pages/Users'
 import CalendarPage from './pages/Calendar'
 import BaseDocumentsPage from './pages/BaseDocuments'
 import NotFoundPage from './pages/NotFound'
-// FASE 4 - Pendiente: import WorkflowsPage from './pages/Workflows'
+import Reports from './pages/Reports'
+import AdvancedSearch from './pages/AdvancedSearch'
+import SecuritySettings from './pages/SecuritySettings'
+import TeamCollaboration from './pages/TeamCollaboration'
+import ClientSegmentation from './pages/ClientSegmentation'
+import MarketInsights from './pages/MarketInsights'
+import WorkflowsPage from './pages/Workflows'
+import AIIntelligencePage from './pages/AIIntelligence'
 
 function PrivateRoute({ children }) {
   const token = useAuthStore(s => s.token)
@@ -36,8 +43,14 @@ export default function App() {
         <Route path="settings" element={<SettingsPage />} />
         <Route path="calendar" element={<CalendarPage />} />
         <Route path="documents" element={<BaseDocumentsPage />} />
-        {/* FASE 4 - Pendiente de activar: Automatizaciones/Workflows. Reactivar cuando estén las tablas workflow_rules en Supabase. */}
-        {/* <Route path="workflows" element={<WorkflowsPage />} /> */}
+        <Route path="reports" element={<Reports />} />
+        <Route path="search" element={<AdvancedSearch />} />
+        <Route path="security" element={<SecuritySettings />} />
+        <Route path="chat" element={<TeamCollaboration />} />
+        <Route path="clients/segmentation" element={<ClientSegmentation />} />
+        <Route path="market" element={<MarketInsights />} />
+        <Route path="workflows" element={<WorkflowsPage />} />
+        <Route path="ai" element={<AIIntelligencePage />} />
       </Route>
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

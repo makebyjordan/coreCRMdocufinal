@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import {
   FolderKanban, TrendingUp, Clock, AlertTriangle,
   FileText, CheckCircle, XCircle, BarChart3,
   Users, PenSquare, Phone, CalendarDays, ChevronRight,
+  Plus, Search, MessageSquare, Shield, Zap,
 } from 'lucide-react'
 import { format, parseISO, isPast, formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -137,6 +138,67 @@ export default function DashboardPage() {
         <StatCard icon={Clock} label="Firmas pendientes" value={stats?.pendingSignatures ?? '—'} color="yellow" />
         <StatCard icon={AlertTriangle} label="Expedientes bloqueados" value={alerts?.blocked?.length ?? '—'} color="red" />
         <StatCard icon={BarChart3} label="Sin actividad 7 días" value={alerts?.stale?.length ?? '—'} color="red" />
+      </div>
+
+      {/* Quick Actions */}
+      <div className="card p-6">
+        <h3 style={{ color: 'var(--text-main)' }} className="font-semibold mb-4 flex items-center gap-2">
+          <Zap size={18} className="text-blue-500" />
+          Acciones rápidas
+        </h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Link
+            to="/expedients/new"
+            className="card p-4 text-center hover:shadow-md hover:border-[var(--primary-color)] transition-all group"
+          >
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition-transform"
+              style={{ backgroundColor: 'var(--primary-glow)', color: 'var(--primary-color)' }}
+            >
+              <Plus size={20} />
+            </div>
+            <p style={{ color: 'var(--text-main)' }} className="font-medium text-sm">Nuevo expediente</p>
+          </Link>
+
+          <Link
+            to="/clients"
+            className="card p-4 text-center hover:shadow-md hover:border-blue-500 transition-all group"
+          >
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition-transform"
+              style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}
+            >
+              <Users size={20} />
+            </div>
+            <p style={{ color: 'var(--text-main)' }} className="font-medium text-sm">Nuevo cliente</p>
+          </Link>
+
+          <Link
+            to="/expedients?tab=busqueda"
+            className="card p-4 text-center hover:shadow-md hover:border-purple-500 transition-all group"
+          >
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition-transform"
+              style={{ backgroundColor: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' }}
+            >
+              <Search size={20} />
+            </div>
+            <p style={{ color: 'var(--text-main)' }} className="font-medium text-sm">Buscar expediente</p>
+          </Link>
+
+          <Link
+            to="/chat"
+            className="card p-4 text-center hover:shadow-md hover:border-orange-500 transition-all group"
+          >
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition-transform"
+              style={{ backgroundColor: 'rgba(251, 146, 60, 0.1)', color: '#fb923c' }}
+            >
+              <MessageSquare size={20} />
+            </div>
+            <p style={{ color: 'var(--text-main)' }} className="font-medium text-sm">Chat equipo</p>
+          </Link>
+        </div>
       </div>
 
       {/* Gráficos */}

@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form'
 import toast from 'react-hot-toast'
 import { Plus, Edit2, X, UserCheck, UserX } from 'lucide-react'
 import api from '../api/client'
+import UserRolesManager from '../components/Users/UserRolesManager'
 
 const ROLE_COLORS = {
   COMERCIAL: 'bg-blue-500/20 text-blue-400',
@@ -98,8 +99,8 @@ function UserModal({ user, onClose, onSaved }) {
   })
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="card p-6 w-full max-w-md">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-auto">
+      <div className="card p-6 w-full max-w-md my-8">
         <div className="flex items-center justify-between mb-5">
           <h3 className="font-bold text-lg">{user ? 'Editar usuario' : 'Nuevo usuario'}</h3>
           <button onClick={onClose}><X size={20} className="text-gray-400" /></button>
@@ -136,6 +137,13 @@ function UserModal({ user, onClose, onSaved }) {
             </button>
           </div>
         </form>
+
+        {/* Gestor de roles - solo cuando se edita */}
+        {user && (
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <UserRolesManager userId={user.id} />
+          </div>
+        )}
       </div>
     </div>
   )

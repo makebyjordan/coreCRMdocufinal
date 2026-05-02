@@ -1,13 +1,139 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
   FileText, Plus, Search, Trash2, ExternalLink,
   FileIcon, Filter, Upload, X, Pencil, Download, Building2,
-  FileSignature, CheckCircle
+  FileSignature, CheckCircle, Tag
 } from 'lucide-react'
 import api from '../api/client'
 import useAuthStore from '../store/authStore'
+
+// ─── Categorías gestionadas en localStorage ───────────────────────────────────
+const DEFAULT_CATEGORIES = [
+  { value: 'GENERAL', label: 'General / Oficina' },
+  { value: 'VENTA',   label: 'Ventas' },
+  { value: 'ALQUILER',label: 'Alquileres' },
+  { value: 'LEGAL',   label: 'Legal / LOPD' },
+]
+const STORAGE_KEY = 'docuinmo_categories'
+
+function getCategories() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
+    // Merge defaults + custom, sin duplicados por value
+    const map = new Map(DEFAULT_CATEGORIES.map(c => [c.value, c]))
+    stored.forEach(c => map.set(c.value, c))
+    return [...map.values()]
+  } catch {
+    return DEFAULT_CATEGORIES
+  }
+}
+
+function saveCategory(value, label) {
+  const current = getCategories()
+  if (current.some(c => c.value === value)) return
+  const updated = [...current, { value, label }]
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
+}
+
+/**
+ * CategorySelect
+ * Desplegable de categorías con opción "+ Nueva categoría".
+ * Props:
+ *   value, onChange(newValue)
+ *   showAllOption  — si true, añade "Todas las categorías" al inicio
+ *   className
+ */
+function CategorySelect({ value, onChange, showAllOption = false, className = '' }) {
+  const [categories, setCategories] = useState(getCategories)
+  const [adding, setAdding] = useState(false)
+  const [newLabel, setNewLabel] = useState('')
+  const inputRef = useRef(null)
+
+  useEffect(() => {
+    if (adding) inputRef.current?.focus()
+  }, [adding])
+
+  function handleSelectChange(e) {
+    if (e.target.value === '__ADD__') {
+      setAdding(true)
+    } else {
+      onChange(e.target.value)
+    }
+  }
+
+  function confirmNew(e) {
+    e.preventDefault()
+    const label = newLabel.trim()
+    if (!label) return
+    // Generar value: mayúsculas, sin espacios, sin tildes
+    const val = label.normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '')
+    saveCategory(val, label)
+    const updated = getCategories()
+    setCategories(updated)
+    onChange(val)
+    setNewLabel('')
+    setAdding(false)
+    toast.success(`Categoría "${label}" creada`)
+  }
+
+  function cancelNew() {
+    setAdding(false)
+    setNewLabel('')
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="relative">
+        <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={16} />
+        <select
+          className={`select pl-10 h-11 ${className}`}
+          value={adding ? '__ADD__' : value}
+          onChange={handleSelectChange}
+        >
+          {showAllOption && <option value="ALL">Todas las categorías</option>}
+          {categories.map(c => (
+            <option key={c.value} value={c.value}>{c.label}</option>
+          ))}
+          <option value="__ADD__">＋ Nueva categoría...</option>
+        </select>
+      </div>
+
+      {adding && (
+        <form onSubmit={confirmNew} className="flex items-center gap-2 animate-in fade-in slide-in-from-top-1 duration-150">
+          <div className="relative flex-1">
+            <Tag size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={newLabel}
+              onChange={e => setNewLabel(e.target.value)}
+              placeholder="Nombre de la categoría"
+              className="input h-9 pl-8 text-sm"
+              maxLength={40}
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={!newLabel.trim()}
+            className="h-9 px-3 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-40 transition-colors"
+          >
+            Añadir
+          </button>
+          <button
+            type="button"
+            onClick={cancelNew}
+            className="h-9 px-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X size={16} />
+          </button>
+        </form>
+      )}
+    </div>
+  )
+}
 
 export default function BaseDocuments() {
   const qc = useQueryClient()
@@ -73,19 +199,11 @@ export default function BaseDocuments() {
             value={search} onChange={e => setSearch(e.target.value)}
           />
         </div>
-        <div className="relative">
-          <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-          <select
-            className="select pl-10 h-11"
-            value={category} onChange={e => setCategory(e.target.value)}
-          >
-            <option value="ALL">Todas las categorías</option>
-            <option value="VENTA">Ventas</option>
-            <option value="ALQUILER">Alquileres</option>
-            <option value="GENERAL">General / Oficina</option>
-            <option value="LEGAL">Legal / LOPD</option>
-          </select>
-        </div>
+        <CategorySelect
+          value={category}
+          onChange={setCategory}
+          showAllOption
+        />
         <div className="relative">
           <FileSignature className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
           <select
@@ -242,12 +360,7 @@ function EditBaseModal({ doc, onClose, onSave, isPending }) {
 
           <div className="space-y-1">
             <label className="text-xs font-bold text-gray-500 ml-1">CATEGORÍA</label>
-            <select className="select h-11" value={category} onChange={e => setCategory(e.target.value)}>
-              <option value="GENERAL">General / Oficina</option>
-              <option value="VENTA">Ventas</option>
-              <option value="ALQUILER">Alquileres</option>
-              <option value="LEGAL">Legal / LOPD</option>
-            </select>
+            <CategorySelect value={category} onChange={setCategory} />
           </div>
 
           <div className="space-y-3 pt-2">
@@ -462,12 +575,7 @@ function UploadBaseModal({ onClose, onSuccess }) {
 
           <div className="space-y-1">
             <label className="text-xs font-bold text-gray-500 ml-1">CATEGORÍA</label>
-            <select className="select h-11" value={category} onChange={e => setCategory(e.target.value)}>
-              <option value="GENERAL">General / Oficina</option>
-              <option value="VENTA">Ventas</option>
-              <option value="ALQUILER">Alquileres</option>
-              <option value="LEGAL">Legal / LOPD</option>
-            </select>
+            <CategorySelect value={category} onChange={setCategory} />
           </div>
 
           <div className="space-y-3 pt-2">

@@ -25,7 +25,28 @@ router.use('/document-validations', authenticate, require('./documentValidations
 router.use('/client-journey', authenticate, require('./clientJourney.routes'));
 router.use('/tasks', authenticate, require('./tasks.routes'));
 router.use('/workflows', authenticate, require('./workflows.routes'));
+router.use('/media', authenticate, require('./media.routes'));
 router.use('/webhooks', require('./webhooks.routes'));
 router.use('/integrations', require('./integrations.routes'));
+
+// FASE 1-3: Nuevas rutas para 43 funciones
+router.use('/reporting', authenticate, require('./reporting.routes'));
+router.use('/search', authenticate, require('./search.routes'));
+router.use('/chat', authenticate, require('./chat.routes'));
+router.use('/audit', authenticate, require('./audit.routes'));
+router.use('/clients-advanced', authenticate, require('./clients-advanced.routes'));
+router.use('/security', authenticate, require('./security.routes'));
+router.use('/productivity', authenticate, require('./productivity.routes'));
+
+// ROLES Y COLABORADORES
+router.use('/roles', authenticate, require('./roles.routes'));
+router.use('/collaborators', authenticate, require('./collaborators.routes'));
+
+// FASE 2: Mobile & Push Notifications
+router.use('/mobile', authenticate, require('./mobile.routes'));
+
+// FASE 2: AI/ML Functions
+router.use('/ai', authenticate, require('./ai.routes'));
+router.use('/reports', authenticate, require('./reports.routes'));
 
 module.exports = router;

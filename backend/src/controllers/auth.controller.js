@@ -8,7 +8,10 @@ async function login(req, res) {
     return res.status(400).json({ error: 'Email y contraseña requeridos' });
   }
 
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({
+    where: { email },
+    include: { userRoles: true }
+  });
   if (!user || !user.active) {
     return res.status(401).json({ error: 'Credenciales inválidas' });
   }
@@ -18,15 +21,23 @@ async function login(req, res) {
     return res.status(401).json({ error: 'Credenciales inválidas' });
   }
 
+  // Extraer roles del usuario para el JWT
+  const roles = user.userRoles.map(ur => ur.role);
+
   const token = jwt.sign(
-    { userId: user.id, role: user.role },
+    { userId: user.id, roles },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
   );
 
   res.json({
     token,
-    user: { id: user.id, name: user.name, email: user.email, role: user.role },
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      userRoles: user.userRoles
+    },
   });
 }
 
