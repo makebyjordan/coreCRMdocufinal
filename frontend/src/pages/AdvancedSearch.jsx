@@ -11,7 +11,7 @@ export default function AdvancedSearch() {
 
   const { data: results = [], isLoading } = useQuery({
     queryKey: ['search', query],
-    queryFn: () => (query.length > 2 ? api.get('/search/query', { params: { query } }).then(r => r.data) : Promise.resolve([])),
+    queryFn: () => (query.length > 2 ? api.post('/search/query', { query, entityType: 'all' }).then(r => r.data) : Promise.resolve([])),
     enabled: query.length > 2,
   });
 
