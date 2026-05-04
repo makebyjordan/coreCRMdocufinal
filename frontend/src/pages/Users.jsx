@@ -52,7 +52,14 @@ export default function UsersPage() {
                   <td className="px-4 py-3 font-medium">{u.name}</td>
                   <td className="px-4 py-3 text-[var(--text-muted)]">{u.email}</td>
                   <td className="px-4 py-3">
-                    <span className={`badge ${ROLE_COLORS[u.role] || 'bg-[var(--sidebar-bg)]'}`}>{u.role}</span>
+                    <div className="flex flex-wrap gap-1">
+                      {(u.userRoles?.length > 0)
+                        ? u.userRoles.map(r => (
+                            <span key={r.id} className={`badge ${ROLE_COLORS[r.role] || 'bg-[var(--sidebar-bg)]'}`}>{r.role}</span>
+                          ))
+                        : <span className="badge bg-[var(--sidebar-bg)] text-gray-500">Sin rol</span>
+                      }
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-[var(--text-muted)]">{u.phone || '—'}</td>
                   <td className="px-4 py-3">

@@ -180,7 +180,7 @@ export default function ReportModal({ isOpen, onClose }) {
                             <p className="font-bold text-gray-900">{exp.code}</p>
                             <p className="text-sm font-semibold text-blue-600">{exp.operationType || 'Sin tipo'}</p>
                           </div>
-                          <span className="text-xs bg-gray-100 px-2 py-1 rounded">{exp.phase}</span>
+                          <span className="text-xs bg-gray-100 px-2 py-1 rounded">{exp.currentPhase || exp.phase || 'N/A'}</span>
                         </div>
                         <p className="text-sm text-gray-600">{exp.propertyAddress || 'Sin dirección'}</p>
                         {exp.propertyCity && (
