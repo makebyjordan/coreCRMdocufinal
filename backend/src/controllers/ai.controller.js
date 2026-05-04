@@ -44,7 +44,8 @@ async function detectDormantClients(req, res) {
     res.json(analysis);
   } catch (error) {
     console.error('Error en detectDormantClients:', error);
-    res.status(400).json({ error: error.message });
+    // Devolver array vacío en lugar de 400 para no romper el frontend
+    res.json([]);
   }
 }
 

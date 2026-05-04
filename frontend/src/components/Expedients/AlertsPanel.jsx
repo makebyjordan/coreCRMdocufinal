@@ -274,6 +274,26 @@ function computeLinkedAlerts(linksData) {
   return { critical, important, info }
 }
 
+function getAlertRoute(alert) {
+  if (!alert) return null
+  if (alert.type === 'document' && alert.expedientId) {
+    return `/expedients/${alert.expedientId}?tab=documents`
+  }
+  if (alert.type === 'visit' && alert.expedientId) {
+    return `/expedients/${alert.expedientId}?tab=visits`
+  }
+  if (alert.type === 'checklist' && alert.expedientId) {
+    return `/expedients/${alert.expedientId}?tab=checklist`
+  }
+  if (alert.type === 'signature' && alert.expedientId) {
+    return `/expedients/${alert.expedientId}?tab=signatures`
+  }
+  if (alert.expedientId) {
+    return `/expedients/${alert.expedientId}`
+  }
+  return null
+}
+
 function AlertGroup({ title, color, bgColor, borderColor, icon: GroupIcon, items, navigate }) {
   if (items.length === 0) return null
 
