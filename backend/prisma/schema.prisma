@@ -1245,16 +1245,17 @@ model SearchIndex {
 
 model ChatThread {
   id             String   @id @default(cuid())
-  expedientId    String
+  expedientId    String?
   clientId       String?
   subject        String
+  isDirect       Boolean  @default(false)
   createdById    String
   lastMessageAt  DateTime?
   archivedAt     DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  expedient      Expedient       @relation(fields: [expedientId], references: [id], onDelete: Cascade)
+  expedient      Expedient?      @relation(fields: [expedientId], references: [id], onDelete: SetNull)
   client         Client?         @relation(fields: [clientId], references: [id], onDelete: SetNull)
   createdBy      User            @relation(fields: [createdById], references: [id], onDelete: Cascade)
   messages       ChatMessage[]

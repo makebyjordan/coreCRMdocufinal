@@ -1,35 +1,38 @@
-const { isAdmin, isCommercial, userHasAnyRole } = require('../utils/roleHelper');
 const { prisma } = require('../config/db');
 const chatService = require('../services/chat.service');
 const logger = require('../config/logger');
 
 /**
  * POST /chat/threads
- * Crear nuevo hilo de chat para expediente
+ * Crear nuevo hilo de chat (con expediente o directo entre usuarios)
  */
 async function createChatThread(req, res) {
   try {
-    const { expedientId, subject, participantIds = [] } = req.body;
+    const { expedientId, subject, participantIds = [], isDirect = false } = req.body;
 
-    if (!expedientId || !subject) {
-      return res.status(400).json({ error: 'expedientId and subject required' });
+    if (!subject) {
+      return res.status(400).json({ error: 'subject required' });
     }
 
-    // Verificar que el usuario pueda acceder al expediente
-    const hasAccess = await prisma.expedientAssignment.findFirst({
-      where: { expedientId, userId: req.user.id },
+    const allParticipants = [req.user.id, ...participantIds.filter(id => id !== req.user.id)];
+
+    const thread = await prisma.chatThread.create({
+      data: {
+        subject,
+        expedientId: expedientId || null,
+        isDirect: !!isDirect,
+        createdById: req.user.id,
+        lastMessageAt: new Date(),
+        participants: {
+          create: allParticipants.map(userId => ({ userId })),
+        },
+      },
+      include: {
+        participants: { include: { user: { select: { id: true, name: true, email: true } } } },
+        expedient: { select: { id: true, code: true } },
+        messages: { take: 1, orderBy: { createdAt: 'desc' } },
+      },
     });
-
-    if (!hasAccess && isCommercial(req.user)) {
-      return res.status(403).json({ error: 'No access to this expedient' });
-    }
-
-    const thread = await chatService.createChatThread(expedientId, subject, [
-      req.user.id,
-      ...participantIds,
-    ]);
-
-    logger.info(`[Chat] Thread created: ${thread.id} for expedient ${expedientId}`);
 
     res.json(thread);
   } catch (error) {
@@ -39,20 +42,95 @@ async function createChatThread(req, res) {
 }
 
 /**
+ * POST /chat/direct
+ * Obtener o crear conversación directa con otro usuario
+ */
+async function getOrCreateDirectThread(req, res) {
+  try {
+    const { targetUserId } = req.body;
+
+    if (!targetUserId) {
+      return res.status(400).json({ error: 'targetUserId required' });
+    }
+
+    if (targetUserId === req.user.id) {
+      return res.status(400).json({ error: 'Cannot message yourself' });
+    }
+
+    // Buscar hilo directo existente entre estos dos usuarios
+    const existing = await prisma.chatThread.findFirst({
+      where: {
+        isDirect: true,
+        AND: [
+          { participants: { some: { userId: req.user.id } } },
+          { participants: { some: { userId: targetUserId } } },
+        ],
+      },
+      include: {
+        participants: { include: { user: { select: { id: true, name: true, email: true } } } },
+        messages: { take: 1, orderBy: { createdAt: 'desc' }, include: { user: { select: { name: true } } } },
+      },
+    });
+
+    if (existing) {
+      return res.json(existing);
+    }
+
+    // Obtener nombre del usuario destino para el subject
+    const targetUser = await prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { name: true },
+    });
+
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Crear hilo directo nuevo
+    const thread = await prisma.chatThread.create({
+      data: {
+        subject: `DM: ${req.user.name} ↔ ${targetUser.name}`,
+        isDirect: true,
+        createdById: req.user.id,
+        lastMessageAt: new Date(),
+        participants: {
+          create: [{ userId: req.user.id }, { userId: targetUserId }],
+        },
+      },
+      include: {
+        participants: { include: { user: { select: { id: true, name: true, email: true } } } },
+        messages: { take: 1, orderBy: { createdAt: 'desc' }, include: { user: { select: { name: true } } } },
+      },
+    });
+
+    res.json(thread);
+  } catch (error) {
+    logger.error('[Chat] Get/create direct thread error:', error);
+    res.status(500).json({ error: 'Failed to get or create direct thread' });
+  }
+}
+
+/**
  * GET /chat/threads
- * Obtener todos los threads del usuario
+ * Obtener todos los threads del usuario (directos + de expedientes)
  */
 async function getUserChatThreads(req, res) {
   try {
-    const { skip = 0, limit = 20 } = req.query;
+    const { skip = 0, limit = 50 } = req.query;
 
     const threads = await prisma.chatThread.findMany({
       where: {
         participants: { some: { userId: req.user.id } },
       },
       include: {
-        messages: { take: 1, orderBy: { createdAt: 'desc' } },
-        participants: { select: { user: { select: { id: true, name: true, email: true } } } },
+        messages: {
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+          include: { user: { select: { id: true, name: true } } },
+        },
+        participants: {
+          include: { user: { select: { id: true, name: true, email: true } } },
+        },
         expedient: { select: { id: true, code: true } },
       },
       orderBy: { lastMessageAt: 'desc' },
@@ -60,16 +138,7 @@ async function getUserChatThreads(req, res) {
       take: parseInt(limit),
     });
 
-    const total = await prisma.chatThread.count({
-      where: { participants: { some: { userId: req.user.id } } },
-    });
-
-    res.json({
-      threads,
-      total,
-      skip: parseInt(skip),
-      limit: parseInt(limit),
-    });
+    res.json({ threads, total: threads.length });
   } catch (error) {
     logger.error('[Chat] Get user threads error:', error);
     res.status(500).json({ error: 'Failed to get threads' });
@@ -83,19 +152,19 @@ async function getUserChatThreads(req, res) {
 async function getChatThread(req, res) {
   try {
     const { threadId } = req.params;
-    const { skip = 0, limit = 50 } = req.query;
+    const { skip = 0, limit = 100 } = req.query;
 
     const thread = await prisma.chatThread.findUnique({
       where: { id: threadId },
       include: {
-        participants: { select: { user: { select: { id: true, name: true, email: true } } } },
+        participants: { include: { user: { select: { id: true, name: true, email: true } } } },
         messages: {
-          include: { author: { select: { id: true, name: true, email: true } } },
+          include: { user: { select: { id: true, name: true } } },
           orderBy: { createdAt: 'asc' },
           skip: parseInt(skip),
           take: parseInt(limit),
         },
-        expedient: { select: { id: true, code: true, clientId: true } },
+        expedient: { select: { id: true, code: true } },
       },
     });
 
@@ -104,7 +173,10 @@ async function getChatThread(req, res) {
     }
 
     // Marcar como leído
-    await chatService.markThreadAsRead(threadId, req.user.id);
+    await prisma.chatParticipant.updateMany({
+      where: { threadId, userId: req.user.id },
+      data: { unreadCount: 0, lastReadAt: new Date() },
+    });
 
     res.json(thread);
   } catch (error) {
@@ -119,20 +191,34 @@ async function getChatThread(req, res) {
  */
 async function sendMessage(req, res) {
   try {
-    const { threadId, content, mentions = [], attachments = null } = req.body;
+    const { threadId, content, mentions = [] } = req.body;
 
     if (!threadId || !content || content.trim().length === 0) {
       return res.status(400).json({ error: 'threadId and content required' });
     }
 
-    const message = await chatService.sendMessage(threadId, req.user.id, content, mentions, attachments);
+    // Crear mensaje
+    const message = await prisma.chatMessage.create({
+      data: {
+        threadId,
+        userId: req.user.id,
+        content: content.trim(),
+        mentions,
+      },
+      include: { user: { select: { id: true, name: true } } },
+    });
 
-    // Notificar menciones
-    if (mentions.length > 0) {
-      await chatService.notifyMentioned(mentions, message);
-    }
+    // Actualizar lastMessageAt del thread
+    await prisma.chatThread.update({
+      where: { id: threadId },
+      data: { lastMessageAt: new Date() },
+    });
 
-    logger.info(`[Chat] Message sent in thread ${threadId} by user ${req.user.id}`);
+    // Incrementar unread para otros participantes
+    await prisma.chatParticipant.updateMany({
+      where: { threadId, userId: { not: req.user.id } },
+      data: { unreadCount: { increment: 1 } },
+    });
 
     res.json(message);
   } catch (error) {
@@ -142,108 +228,84 @@ async function sendMessage(req, res) {
 }
 
 /**
- * PUT /chat/messages/:messageId
- * Editar mensaje
- */
-async function editMessage(req, res) {
-  try {
-    const { messageId } = req.params;
-    const { content } = req.body;
-
-    if (!content || content.trim().length === 0) {
-      return res.status(400).json({ error: 'content required' });
-    }
-
-    const message = await prisma.chatMessage.findUnique({
-      where: { id: messageId },
-    });
-
-    if (!message) {
-      return res.status(404).json({ error: 'Message not found' });
-    }
-
-    if (message.userId !== req.user.id && !userHasAnyRole(req.user, 'ADMINISTRACION')) {
-      return res.status(403).json({ error: 'Not authorized' });
-    }
-
-    const updated = await prisma.chatMessage.update({
-      where: { id: messageId },
-      data: { content, updatedAt: new Date() },
-      include: { author: { select: { id: true, name: true, email: true } } },
-    });
-
-    logger.info(`[Chat] Message ${messageId} edited`);
-
-    res.json(updated);
-  } catch (error) {
-    logger.error('[Chat] Edit message error:', error);
-    res.status(500).json({ error: 'Failed to edit message' });
-  }
-}
-
-/**
  * GET /chat/unread
  * Obtener conteo de mensajes no leídos
  */
 async function getUnreadCount(req, res) {
   try {
-    const unreadCount = await chatService.getUnreadCount(req.user.id);
+    const result = await prisma.chatParticipant.aggregate({
+      where: { userId: req.user.id },
+      _sum: { unreadCount: true },
+    });
 
-    res.json({ unreadCount });
+    res.json({ unreadCount: result._sum.unreadCount || 0 });
   } catch (error) {
     logger.error('[Chat] Get unread count error:', error);
-    res.status(500).json({ error: 'Failed to get unread count' });
+    res.json({ unreadCount: 0 });
   }
 }
 
 /**
  * POST /chat/threads/:threadId/mark-read
- * Marcar thread como leído
  */
 async function markThreadAsRead(req, res) {
   try {
-    const { threadId } = req.params;
-
-    await chatService.markThreadAsRead(threadId, req.user.id);
-
-    res.json({ message: 'Thread marked as read' });
+    await prisma.chatParticipant.updateMany({
+      where: { threadId: req.params.threadId, userId: req.user.id },
+      data: { unreadCount: 0, lastReadAt: new Date() },
+    });
+    res.json({ ok: true });
   } catch (error) {
-    logger.error('[Chat] Mark as read error:', error);
     res.status(500).json({ error: 'Failed to mark as read' });
   }
 }
 
 /**
+ * PUT /chat/messages/:messageId
+ */
+async function editMessage(req, res) {
+  try {
+    const { content } = req.body;
+    const message = await prisma.chatMessage.findUnique({ where: { id: req.params.messageId } });
+    if (!message) return res.status(404).json({ error: 'Message not found' });
+    if (message.userId !== req.user.id) return res.status(403).json({ error: 'Not authorized' });
+
+    const updated = await prisma.chatMessage.update({
+      where: { id: req.params.messageId },
+      data: { content, edited: true, editedAt: new Date() },
+      include: { user: { select: { id: true, name: true } } },
+    });
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to edit message' });
+  }
+}
+
+/**
  * POST /chat/threads/:threadId/add-participant
- * Agregar participante a thread
  */
 async function addParticipant(req, res) {
   try {
-    const { threadId } = req.params;
     const { userId } = req.body;
-
-    if (!userId) {
-      return res.status(400).json({ error: 'userId required' });
-    }
-
-    const result = await chatService.addParticipant(threadId, userId);
-
-    logger.info(`[Chat] User ${userId} added to thread ${threadId}`);
-
-    res.json(result);
+    await prisma.chatParticipant.upsert({
+      where: { threadId_userId: { threadId: req.params.threadId, userId } },
+      update: {},
+      create: { threadId: req.params.threadId, userId },
+    });
+    res.json({ ok: true });
   } catch (error) {
-    logger.error('[Chat] Add participant error:', error);
     res.status(500).json({ error: 'Failed to add participant' });
   }
 }
 
 module.exports = {
   createChatThread,
+  getOrCreateDirectThread,
   getUserChatThreads,
   getChatThread,
   sendMessage,
-  editMessage,
   getUnreadCount,
   markThreadAsRead,
+  editMessage,
   addParticipant,
 };

@@ -6,6 +6,9 @@ const ctrl = require('../controllers/chat.controller');
 // POST /chat/threads - Crear nuevo thread
 router.post('/threads', authenticate, ctrl.createChatThread);
 
+// POST /chat/direct - Obtener o crear conversación directa entre dos usuarios
+router.post('/direct', authenticate, ctrl.getOrCreateDirectThread);
+
 // GET /chat/threads - Obtener threads del usuario
 router.get('/threads', authenticate, ctrl.getUserChatThreads);
 
