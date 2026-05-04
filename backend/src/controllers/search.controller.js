@@ -101,8 +101,14 @@ async function saveSearchFilter(req, res) {
       return res.status(400).json({ error: 'name and filters required' });
     }
 
-    const savedSearch = await prisma.savedSearch.create({
-      data: {
+    const savedSearch = await prisma.savedSearch.upsert({
+      where: {
+        userId_name: { userId: req.user.id, name },
+      },
+      update: {
+        filters: JSON.stringify(filters),
+      },
+      create: {
         userId: req.user.id,
         name,
         filters: JSON.stringify(filters),
