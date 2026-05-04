@@ -146,14 +146,12 @@ async function detectDormantClients(daysThreshold = 90) {
       where: {
         updatedAt: { lt: dormantDate },
         active: true,
-        expedients: {
-          some: {
-            status: { in: ['ACTIVO', 'BLOQUEADO'] },
-          },
-        },
       },
       include: {
-        expedients: { where: { status: { in: ['ACTIVO', 'BLOQUEADO'] } } },
+        expedients: {
+          where: { status: { in: ['ACTIVO', 'BLOQUEADO'] } },
+          take: 5,
+        },
         notes: { orderBy: { createdAt: 'desc' }, take: 3 },
       },
       take: 50,

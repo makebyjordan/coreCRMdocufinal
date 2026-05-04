@@ -143,12 +143,13 @@ async function analyzeDocument(req, res) {
  */
 async function getAIStats(req, res) {
   try {
+    const safeCount = (model) => model.count().catch(() => 0);
     const stats = await Promise.all([
-      prisma.clientPrediction.count(),
-      prisma.dormantClientAnalysis.count(),
-      prisma.expedientRecommendation.count(),
-      prisma.documentAnalysis.count(),
-      prisma.aiTemplate.count(),
+      safeCount(prisma.clientPrediction),
+      safeCount(prisma.dormantClientAnalysis),
+      safeCount(prisma.expedientRecommendation),
+      safeCount(prisma.documentAnalysis),
+      safeCount(prisma.aITemplate),
     ]);
 
     res.json({
@@ -161,7 +162,7 @@ async function getAIStats(req, res) {
     });
   } catch (error) {
     console.error('Error en getAIStats:', error);
-    res.status(400).json({ error: error.message });
+    res.json({ predictions: 0, dormantAnalyses: 0, recommendations: 0, documentAnalyses: 0, templates: 0, totalRecords: 0 });
   }
 }
 

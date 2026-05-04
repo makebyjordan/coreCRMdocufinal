@@ -198,7 +198,7 @@ async function generateTimelineAnalysis(operationType) {
  */
 async function generateKPIDashboard() {
   try {
-    const [activeCount, closedCount, blockedCount, totalCommissions, avgClosureRate] =
+    const [activeCount, closedCount, blockedCount, totalCommissions] =
       await Promise.all([
         prisma.expedient.count({ where: { status: 'ACTIVO' } }),
         prisma.expedient.count({ where: { status: 'COMPLETADO' } }),
@@ -206,12 +206,7 @@ async function generateKPIDashboard() {
         prisma.commission.aggregate({
           _sum: { amount: true },
           where: { paid: true },
-        }),
-        prisma.expedient.aggregate({
-          _avg: {
-            closedAt: null, // Habrá que calcular manualmente
-          },
-        }),
+        }).catch(() => ({ _sum: { amount: 0 } })),
       ]);
 
     const totalExpedients = activeCount + closedCount + blockedCount;

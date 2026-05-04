@@ -49,4 +49,7 @@ router.use('/mobile', authenticate, require('./mobile.routes'));
 router.use('/ai', authenticate, require('./ai.routes'));
 router.use('/reports', authenticate, require('./reports.routes'));
 
+// Forecast & Market data
+router.use('/forecast', authenticate, require('./forecast.routes'));
+
 module.exports = router;
