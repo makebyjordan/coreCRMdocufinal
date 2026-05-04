@@ -112,8 +112,10 @@ export default function ReportModal({ isOpen, onClose }) {
                     disabled={reportMutation.isPending}
                     className="text-left p-4 border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition disabled:opacity-50"
                   >
-                    <p className="font-semibold text-gray-900">{client.name}</p>
-                    <p className="text-sm text-gray-500">{client.dni || 'Sin DNI'}</p>
+                    <p className="font-semibold text-gray-900">
+                      {client.companyName || `${client.firstName || ''} ${client.lastName || ''}`.trim() || 'Sin nombre'}
+                    </p>
+                    <p className="text-sm text-gray-500">{client.dni || client.nif || 'Sin DNI'}</p>
                   </button>
                 ))}
               </div>

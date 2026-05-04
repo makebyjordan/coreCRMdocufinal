@@ -22,32 +22,58 @@ async function getClientReport(req, res) {
     // Build client name from firstName/lastName or companyName
     const clientName = client.companyName || `${client.firstName || ''} ${client.lastName || ''}`.trim() || 'Sin nombre';
 
-    // Get expedients
-    const expedients = await prisma.expedient.findMany({
-      where: { clientId },
-      include: {
-        assignments: { include: { user: true } },
-        checklists: true,
-      },
+    // Get expedients (direct clientId OR participant via ExpedientClient)
+    const [directExpedients, participantLinks] = await Promise.all([
+      prisma.expedient.findMany({
+        where: { clientId },
+        include: {
+          assignments: { include: { user: true } },
+        },
+      }),
+      prisma.expedientClient.findMany({
+        where: { clientId },
+        include: {
+          expedient: {
+            include: { assignments: { include: { user: true } } },
+          },
+        },
+      }),
+    ]);
+
+    // Merge and deduplicate expedients
+    const participantExpedients = participantLinks.map(l => l.expedient).filter(e => e);
+    const allExpedientIds = new Set(directExpedients.map(e => e.id));
+    const mergedExpedients = [...directExpedients];
+    participantExpedients.forEach(e => {
+      if (!allExpedientIds.has(e.id)) {
+        mergedExpedients.push(e);
+        allExpedientIds.add(e.id);
+      }
     });
+    const expedients = mergedExpedients;
 
     // Get commissions
     const commissions = await prisma.commission.findMany({
-      where: { expedient: { clientId } },
+      where: {
+        OR: [
+          { expedient: { clientId } },
+          { expedient: { clientRoles: { some: { clientId } } } },
+        ],
+      },
       include: { expedient: true },
-    });
+    }).catch(() => []);
 
     // Get activity log
     const activities = await prisma.detailedActivityLog.findMany({
       where: { clientId },
       orderBy: { timestamp: 'desc' },
       take: 100,
-    });
+    }).catch(() => []);
 
     // Calculate totals
-    const totalCommissions = commissions.reduce((sum, c) => sum + (c.amount || 0), 0);
+    const totalCommissions = commissions.reduce((sum, c) => sum + (parseFloat(c.amount) || 0), 0);
     const totalExpedients = expedients.length;
-    const closedExpedients = expedients.filter(e => e.phase === 'ACUERDO').length;
+    const closedExpedients = expedients.filter(e => e.status === 'COMPLETADO' || e.currentPhase === 'ACUERDO').length;
 
     res.json({
       client: {
@@ -96,7 +122,7 @@ async function getClientReportPDF(req, res) {
 
     const commissions = await prisma.commission.findMany({
       where: { expedient: { clientId } },
-    });
+    }).catch(() => []);
 
     // Create PDF
     const doc = new PDFDocument();
@@ -123,14 +149,14 @@ async function getClientReportPDF(req, res) {
     doc.fontSize(12).font('Helvetica-Bold').text('EXPEDIENTES');
     doc.fontSize(10).font('Helvetica');
     doc.text(`Total: ${expedients.length}`);
-    doc.text(`Cerrados: ${expedients.filter(e => e.phase === 'ACUERDO').length}`);
-    doc.text(`En proceso: ${expedients.filter(e => e.phase !== 'ACUERDO').length}`);
+    doc.text(`Cerrados: ${expedients.filter(e => e.status === 'COMPLETADO' || e.currentPhase === 'ACUERDO').length}`);
+    doc.text(`En proceso: ${expedients.filter(e => e.status !== 'COMPLETADO' && e.currentPhase !== 'ACUERDO').length}`);
     doc.moveDown();
 
     // Expedient Details
     expedients.forEach((exp, i) => {
       doc.fontSize(9).font('Helvetica-Bold').text(`${i + 1}. ${exp.code}`);
-      doc.fontSize(9).font('Helvetica').text(`Fase: ${exp.phase}`);
+      doc.fontSize(9).font('Helvetica').text(`Fase: ${exp.currentPhase || 'N/A'}`);
       doc.text(`Propiedad: ${exp.propertyAddress || 'N/A'}`);
     });
     doc.moveDown();
@@ -193,17 +219,19 @@ async function getClientReportExcel(req, res) {
       ['RESUMEN'],
       ['Total Expedientes', expedients.length],
       ['Expedientes Cerrados', expedients.filter(e => e.phase === 'ACUERDO').length],
-      ['Total Comisiones', `€${commissions.reduce((sum, c) => sum + (c.amount || 0), 0).toFixed(2)}`],
+      ['Total Comisiones', `€${commissions.reduce((sum, c) => sum + (parseFloat(c.amount) || 0), 0).toFixed(2)}`],
     ];
     const ws1 = XLSX.utils.aoa_to_sheet(summaryData);
     XLSX.utils.book_append_sheet(wb, ws1, 'Resumen');
 
     // Sheet 2: Expedients
     const expData = [
-      ['Código', 'Fase', 'Dirección', 'Fecha Creación'],
+      ['Código', 'Tipo', 'Fase', 'Estado', 'Dirección', 'Fecha Creación'],
       ...expedients.map(e => [
         e.code,
-        e.phase,
+        e.operationType || 'N/A',
+        e.currentPhase || 'N/A',
+        e.status || 'N/A',
         e.propertyAddress || 'N/A',
         new Date(e.createdAt).toLocaleDateString('es-ES'),
       ]),
