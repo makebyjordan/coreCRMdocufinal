@@ -92,17 +92,34 @@ app.use((err, req, res, next) => {
 
 // ─── Inicio ───────────────────────────────────────────────────────────────────
 async function main() {
+  validateCriticalEnv();
+
+  // Start listening immediately so Render's health check can pass
+  app.listen(PORT, () => {
+    logger.info(`Servidor CRM escuchando en http://localhost:${PORT}`);
+  });
+
+  // Connect to DB with retries — don't crash the process on first failure
+  let dbConnected = false;
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      await prisma.$connect();
+      logger.info('[DB] Conexión a PostgreSQL establecida');
+      dbConnected = true;
+      break;
+    } catch (error) {
+      logger.warn(`[DB] Intento ${attempt}/5 fallido: ${error.message}`);
+      if (attempt < 5) {
+        await new Promise(r => setTimeout(r, attempt * 3000)); // 3s, 6s, 9s, 12s
+      }
+    }
+  }
+
+  if (!dbConnected) {
+    logger.error('[DB] No se pudo conectar a PostgreSQL tras 5 intentos. El servidor seguirá activo pero las queries fallarán.');
+  }
+
   try {
-    // Validar variables de entorno críticas antes de arrancar
-    validateCriticalEnv();
-
-    await prisma.$connect();
-    logger.info('[DB] Conexión a PostgreSQL establecida');
-
-    app.listen(PORT, () => {
-      logger.info(`Servidor CRM escuchando en http://localhost:${PORT}`);
-    });
-
     // Inicializar Redis (con fallback a in-memory si no está configurado)
     await initializeRedis();
 
@@ -111,8 +128,7 @@ async function main() {
     initializeSchedulers();
     logger.info('Schedulers iniciados (postventa + segmentación + backup + forecast + reporting)');
   } catch (error) {
-    logger.error('Error al iniciar el servidor:', error);
-    process.exit(1);
+    logger.warn('Schedulers/Redis no iniciados:', error.message);
   }
 }
 
