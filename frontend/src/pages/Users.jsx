@@ -18,9 +18,10 @@ export default function UsersPage() {
   const qc = useQueryClient()
   const [modal, setModal] = useState(null)
 
-  const { data: users, isLoading } = useQuery({
+  const { data: users, isLoading, error: usersError } = useQuery({
     queryKey: ['users'],
     queryFn: () => api.get('/users').then(r => r.data),
+    retry: 2,
   })
 
   const toggleMutation = useMutation({
@@ -37,7 +38,14 @@ export default function UsersPage() {
       </div>
 
       <div className="card overflow-hidden">
-        {isLoading ? <div className="text-center text-gray-400 py-10">Cargando...</div> : (
+        {isLoading ? <div className="text-center text-gray-400 py-10">Cargando...</div>
+        : usersError ? (
+          <div className="text-center text-red-500 py-10 px-4">
+            <p className="font-semibold">Error al cargar usuarios</p>
+            <p className="text-sm mt-1 text-gray-500">{usersError.response?.data?.error || usersError.message}</p>
+            <button onClick={() => qc.invalidateQueries(['users'])} className="mt-3 text-sm text-blue-600 hover:underline">Reintentar</button>
+          </div>
+        ) : (
           <table className="w-full text-sm">
             <thead className="bg-[var(--bg-color)] border-b border-[var(--border-color)]">
               <tr>
