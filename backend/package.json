@@ -4,6 +4,7 @@
   "description": "CRM documental para agencia inmobiliaria",
   "main": "server.js",
   "scripts": {
+    "postinstall": "node scripts/setup-prisma-wrapper.js",
     "dev": "nodemon server.js",
     "start": "node server.js",
     "test": "jest --forceExit",
